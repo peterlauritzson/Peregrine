@@ -1,0 +1,298 @@
+//--------------------------------------------------------------------------------------------------
+// Race Draft System
+//--------------------------------------------------------------------------------------------------
+
+// Constants
+const int c_peregrine_raceTerran = 1;
+const int c_peregrine_raceProtoss = 2;
+const int c_peregrine_raceZerg = 3;
+
+// State
+int g_draft_p1; // The banning player
+int g_draft_p2; // The picking player
+int g_draft_bannedRace = 0;
+int g_draft_phase = 0; // 0 = Ban, 1 = Pick
+trigger g_draft_trigger;
+
+// UI
+int g_draft_dialog = c_invalidDialogId;
+int g_draft_label = c_invalidDialogControlId;
+int g_draft_btnTerran = c_invalidDialogControlId;
+int g_draft_btnProtoss = c_invalidDialogControlId;
+int g_draft_btnZerg = c_invalidDialogControlId;
+
+//--------------------------------------------------------------------------------------------------
+// Helper: Get Race Name
+//--------------------------------------------------------------------------------------------------
+string RaceName(int race) {
+    if (race == c_peregrine_raceTerran) { return "Terran"; }
+    if (race == c_peregrine_raceProtoss) { return "Protoss"; }
+    if (race == c_peregrine_raceZerg) { return "Zerg"; }
+    return "Unknown";
+}
+
+//--------------------------------------------------------------------------------------------------
+// Helper: Replace Army
+//--------------------------------------------------------------------------------------------------
+void SetPlayerRace(int player, int race) {
+    unitgroup existingUnits;
+    unit u;
+    point startLoc;
+    string townHallType;
+    string workerType;
+    int i;
+
+    // 1. Determine Unit Types
+    if (race == c_peregrine_raceTerran) {
+        townHallType = "CommandCenter";
+        workerType = "SCV";
+    }
+    else if (race == c_peregrine_raceProtoss) {
+        townHallType = "Nexus";
+        workerType = "Probe";
+    }
+    else if (race == c_peregrine_raceZerg) {
+        townHallType = "Hatchery";
+        workerType = "Drone";
+    }
+
+    // 2. Find Start Location (where the current Town Hall is)
+    existingUnits = UnitGroup(null, player, RegionEntireMap(), UnitFilter(0, 0, (1 << c_targetFilterMissile), (1 << (c_targetFilterDead - 32)) | (1 << (c_targetFilterHidden - 32))), 0);
+    startLoc = PlayerStartLocation(player); // Default fallback
+
+    // Try to find the actual town hall to get precise location
+    i = 1;
+    while (i <= UnitGroupCount(existingUnits, c_unitCountAll)) {
+        u = UnitGroupUnit(existingUnits, i);
+        if (UnitTypeTestAttribute(UnitGetType(u), c_unitAttributeStructure)) {
+            startLoc = UnitGetPosition(u);
+            break;
+        }
+        i = i + 1;
+    }
+
+    // 3. Destroy Old Units
+    UnitGroupLoopBegin(existingUnits);
+    while (!UnitGroupLoopDone()) {
+        UnitRemove(UnitGroupLoopCurrent());
+        UnitGroupLoopStep();
+    }
+    UnitGroupLoopEnd();
+
+    // 4. Spawn New Units
+    libNtve_gf_CreateUnitsWithDefaultFacing(1, townHallType, 0, player, startLoc);
+    libNtve_gf_CreateUnitsWithDefaultFacing(12, workerType, 0, player, startLoc);
+    
+    // Zerg needs an Overlord
+    if (race == c_peregrine_raceZerg) {
+        libNtve_gf_CreateUnitsWithDefaultFacing(1, "Overlord", 0, player, startLoc);
+    }
+
+    // 5. Set Resources (Standard Melee Start)
+    PlayerModifyPropertyInt(player, c_playerPropMinerals, c_playerPropOperSetTo, 50);
+    PlayerModifyPropertyInt(player, c_playerPropVespene, c_playerPropOperSetTo, 0);
+}
+
+//--------------------------------------------------------------------------------------------------
+// Helper: Remove Workers
+//--------------------------------------------------------------------------------------------------
+void RemoveWorkers() {
+    // UnitFilter(0, 0, 0, 0) selects everything.
+    unitgroup g = UnitGroup(null, c_playerAny, RegionEntireMap(), UnitFilter(0, 0, 0, 0), 0);
+    unit u;
+    string type;
+    int owner;
+
+    UnitGroupLoopBegin(g);
+    while (!UnitGroupLoopDone()) {
+        u = UnitGroupLoopCurrent();
+        owner = UnitGetOwner(u);
+        
+        // Only check units owned by actual players (1-15)
+        if (owner != 0) {
+            type = UnitGetType(u);
+            if (type == "SCV" || type == "Probe" || type == "Drone") {
+                UnitRemove(u);
+            }
+        }
+        UnitGroupLoopStep();
+    }
+    UnitGroupLoopEnd();
+}
+
+//--------------------------------------------------------------------------------------------------
+// Logic: Finish Draft
+//--------------------------------------------------------------------------------------------------
+void RaceDraft_Finish(int pickedRace) {
+    int p1Race;
+    string msg;
+    
+    // Determine P1's race (The one that wasn't banned and wasn't picked)
+    if (g_draft_bannedRace != c_peregrine_raceTerran && pickedRace != c_peregrine_raceTerran) { p1Race = c_peregrine_raceTerran; }
+    else if (g_draft_bannedRace != c_peregrine_raceProtoss && pickedRace != c_peregrine_raceProtoss) { p1Race = c_peregrine_raceProtoss; }
+    else { p1Race = c_peregrine_raceZerg; }
+
+    // Apply
+    SetPlayerRace(g_draft_p1, p1Race);
+    
+    if (g_draft_p1 != g_draft_p2) {
+        SetPlayerRace(g_draft_p2, pickedRace);
+    } else {
+        // Debug Mode: Don't overwrite P1's units. Just announce it.
+        msg = "DEBUG: Player 2 (You) would have been " + RaceName(pickedRace);
+        UIDisplayMessage(PlayerGroupAll(), c_messageAreaChat, StringToText(msg));
+    }
+
+    // Cleanup UI
+    DialogDestroy(g_draft_dialog);
+    
+    // Unpause
+    GameSetMissionTimePaused(false);
+
+    // Announce
+    msg = "Draft Complete! Player 1: " + RaceName(p1Race) + ", Player 2: " + RaceName(pickedRace);
+    UIDisplayMessage(PlayerGroupAll(), c_messageAreaChat, StringToText(msg));
+}
+
+//--------------------------------------------------------------------------------------------------
+// Logic: Update UI
+//--------------------------------------------------------------------------------------------------
+void RaceDraft_UpdateUI() {
+    if (g_draft_phase == 0) {
+        // Ban Phase (P1)
+        DialogControlSetPropertyAsText(g_draft_label, c_triggerControlPropertyText, PlayerGroupSingle(g_draft_p1), StringToText("BAN a Race"));
+        
+        // Show all buttons to P1
+        DialogControlSetVisible(g_draft_btnTerran, PlayerGroupSingle(g_draft_p1), true);
+        DialogControlSetVisible(g_draft_btnProtoss, PlayerGroupSingle(g_draft_p1), true);
+        DialogControlSetVisible(g_draft_btnZerg, PlayerGroupSingle(g_draft_p1), true);
+        
+        // Only update P2 view if P2 is a different player (avoids overwriting P1 view in solo testing)
+        if (g_draft_p1 != g_draft_p2) {
+            DialogControlSetPropertyAsText(g_draft_label, c_triggerControlPropertyText, PlayerGroupSingle(g_draft_p2), StringToText("Opponent is Banning..."));
+            
+            // Hide buttons from P2
+            DialogControlSetVisible(g_draft_btnTerran, PlayerGroupSingle(g_draft_p2), false);
+            DialogControlSetVisible(g_draft_btnProtoss, PlayerGroupSingle(g_draft_p2), false);
+            DialogControlSetVisible(g_draft_btnZerg, PlayerGroupSingle(g_draft_p2), false);
+        }
+    }
+    else {
+        // Pick Phase (P2)
+        DialogControlSetPropertyAsText(g_draft_label, c_triggerControlPropertyText, PlayerGroupSingle(g_draft_p2), StringToText("PICK your Race"));
+
+        // Show available buttons to P2
+        DialogControlSetVisible(g_draft_btnTerran, PlayerGroupSingle(g_draft_p2), (g_draft_bannedRace != c_peregrine_raceTerran));
+        DialogControlSetVisible(g_draft_btnProtoss, PlayerGroupSingle(g_draft_p2), (g_draft_bannedRace != c_peregrine_raceProtoss));
+        DialogControlSetVisible(g_draft_btnZerg, PlayerGroupSingle(g_draft_p2), (g_draft_bannedRace != c_peregrine_raceZerg));
+
+        // Only update P1 view if P1 is a different player
+        if (g_draft_p1 != g_draft_p2) {
+            DialogControlSetPropertyAsText(g_draft_label, c_triggerControlPropertyText, PlayerGroupSingle(g_draft_p1), StringToText("Opponent is Picking..."));
+
+            // Hide buttons from P1
+            DialogControlSetVisible(g_draft_btnTerran, PlayerGroupSingle(g_draft_p1), false);
+            DialogControlSetVisible(g_draft_btnProtoss, PlayerGroupSingle(g_draft_p1), false);
+            DialogControlSetVisible(g_draft_btnZerg, PlayerGroupSingle(g_draft_p1), false);
+        }
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+// Handler: Button Click
+//--------------------------------------------------------------------------------------------------
+bool RaceDraft_OnClicked(bool testConds, bool runActions) {
+    int control = EventDialogControl();
+    int player = EventPlayer();
+    int selectedRace = 0;
+
+    if (control == g_draft_btnTerran) { selectedRace = c_peregrine_raceTerran; }
+    else if (control == g_draft_btnProtoss) { selectedRace = c_peregrine_raceProtoss; }
+    else if (control == g_draft_btnZerg) { selectedRace = c_peregrine_raceZerg; }
+
+    if (selectedRace == 0) { return true; }
+
+    if (g_draft_phase == 0) {
+        // Ban Phase
+        if (player != g_draft_p1) { return true; }
+        g_draft_bannedRace = selectedRace;
+        g_draft_phase = 1;
+        RaceDraft_UpdateUI();
+    }
+    else {
+        // Pick Phase
+        if (player != g_draft_p2) { return true; }
+        RaceDraft_Finish(selectedRace);
+    }
+
+    return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+// Main: Start Draft
+//--------------------------------------------------------------------------------------------------
+void RaceDraft_Start() {
+    playergroup pg = PlayerGroupActive();
+    int p1 = PlayerGroupPlayer(pg, 1);
+    int p2;
+
+    // Wait for initialization to complete (units to spawn)
+    Wait(0.1, c_timeGame);
+
+    // DEBUG: Handle Single Player Testing
+    if (PlayerGroupCount(pg) < 2) {
+        p2 = p1;
+        UIDisplayMessage(PlayerGroupAll(), c_messageAreaChat, StringToText("⚠️ DEBUG MODE: Solo Testing Active. You control both sides."));
+    } else {
+        p2 = PlayerGroupPlayer(pg, 2);
+    }
+
+    // Randomize who goes first
+    if (RandomInt(0, 1) == 0) {
+        g_draft_p1 = p1;
+        g_draft_p2 = p2;
+    } else {
+        g_draft_p1 = p2;
+        g_draft_p2 = p1;
+    }
+
+    // Pause Game
+    GameSetMissionTimePaused(true);
+    RemoveWorkers();
+
+    // Create UI
+    g_draft_dialog = DialogCreate(500, 400, c_anchorCenter, 0, 0, true);
+    DialogSetTitle(g_draft_dialog, StringToText("Peregrine Draft"));
+    DialogSetVisible(g_draft_dialog, PlayerGroupAll(), true);
+
+    // Label
+    g_draft_label = DialogControlCreate(g_draft_dialog, c_triggerControlTypeLabel);
+    DialogControlSetSize(g_draft_label, PlayerGroupAll(), 400, 50);
+    DialogControlSetPosition(g_draft_label, PlayerGroupAll(), c_anchorTop, 0, 50);
+    DialogControlSetPropertyAsText(g_draft_label, c_triggerControlPropertyText, PlayerGroupAll(), StringToText("Initializing..."));
+
+    // Buttons
+    g_draft_btnTerran = DialogControlCreate(g_draft_dialog, c_triggerControlTypeButton);
+    DialogControlSetSize(g_draft_btnTerran, PlayerGroupAll(), 200, 50);
+    DialogControlSetPosition(g_draft_btnTerran, PlayerGroupAll(), c_anchorTop, 0, 120);
+    DialogControlSetPropertyAsText(g_draft_btnTerran, c_triggerControlPropertyText, PlayerGroupAll(), StringToText("Terran"));
+
+    g_draft_btnProtoss = DialogControlCreate(g_draft_dialog, c_triggerControlTypeButton);
+    DialogControlSetSize(g_draft_btnProtoss, PlayerGroupAll(), 200, 50);
+    DialogControlSetPosition(g_draft_btnProtoss, PlayerGroupAll(), c_anchorTop, 0, 180);
+    DialogControlSetPropertyAsText(g_draft_btnProtoss, c_triggerControlPropertyText, PlayerGroupAll(), StringToText("Protoss"));
+
+    g_draft_btnZerg = DialogControlCreate(g_draft_dialog, c_triggerControlTypeButton);
+    DialogControlSetSize(g_draft_btnZerg, PlayerGroupAll(), 200, 50);
+    DialogControlSetPosition(g_draft_btnZerg, PlayerGroupAll(), c_anchorTop, 0, 240);
+    DialogControlSetPropertyAsText(g_draft_btnZerg, c_triggerControlPropertyText, PlayerGroupAll(), StringToText("Zerg"));
+
+    // Register Trigger
+    g_draft_trigger = TriggerCreate("RaceDraft_OnClicked");
+    TriggerAddEventDialogControl(g_draft_trigger, c_playerAny, g_draft_btnTerran, c_triggerControlEventTypeClick);
+    TriggerAddEventDialogControl(g_draft_trigger, c_playerAny, g_draft_btnProtoss, c_triggerControlEventTypeClick);
+    TriggerAddEventDialogControl(g_draft_trigger, c_playerAny, g_draft_btnZerg, c_triggerControlEventTypeClick);
+
+    // Start
+    RaceDraft_UpdateUI();
+}

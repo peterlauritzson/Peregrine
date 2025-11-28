@@ -2,6 +2,9 @@
 // Peregrine Logic
 //--------------------------------------------------------------------------------------------------
 
+include "scripts/RaceDraft"
+
 void Peregrine_Init() {
     UIDisplayMessage(PlayerGroupAll(), c_messageAreaChat, StringToText("Peregrine Logic Loaded Successfully!"));
+    RaceDraft_Start();
 }
