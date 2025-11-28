@@ -1,0 +1,17 @@
+# Ignore the extracted reference data (it's huge and copyright Blizzard)
+references/*
+!references/mods/
+references/mods/*
+!references/mods/voidmulti.sc2mod/
+
+# Ignore system files
+.DS_Store
+Thumbs.db
+
+# Ignore VS Code settings if you want (optional)
+.vscode/
+
+# SC2 Editor backups (optional, but good practice)
+*.SC2Mod.backup
+*.SC2Map.backup
+Backup/

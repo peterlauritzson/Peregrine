@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TriggerData>
+    <Library Id="C9EAC993">
+        <Root>
+            <Item Type="Trigger" Library="C9EAC993" Id="B32BE1D2"/>
+            <Item Type="CustomScript" Library="C9EAC993" Id="03797DA3"/>
+            <Item Type="Trigger" Library="C9EAC993" Id="00000000"/>
+        </Root>
+        <Element Type="Trigger" Id="B32BE1D2">
+            <Event Type="FunctionCall" Library="C9EAC993" Id="201B680C"/>
+            <Action Type="FunctionCall" Library="C9EAC993" Id="4195EE98"/>
+        </Element>
+        <Element Type="FunctionCall" Id="201B680C">
+            <FunctionDef Type="FunctionDef" Library="Ntve" Id="00000120"/>
+        </Element>
+        <Element Type="FunctionCall" Id="4195EE98">
+            <FunctionDef Type="FunctionDef" Library="Ntve" Id="00000123"/>
+            <ScriptCode>
+                Peregrine_Init();
+            </ScriptCode>
+        </Element>
+        <Element Type="CustomScript" Id="03797DA3">
+            <ScriptCode>
+                include &quot;scripts/PeregrineLogic&quot;
+            </ScriptCode>
+        </Element>
+    </Library>
+</TriggerData>

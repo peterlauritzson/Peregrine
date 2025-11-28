@@ -1,0 +1,7 @@
+//--------------------------------------------------------------------------------------------------
+// Peregrine Logic
+//--------------------------------------------------------------------------------------------------
+
+void Peregrine_Init() {
+    UIDisplayMessage(PlayerGroupAll(), c_messageAreaChat, StringToText("Peregrine Logic Loaded Successfully!"));
+}

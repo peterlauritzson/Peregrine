@@ -1,0 +1,63 @@
+include "TriggerLibs/NativeLib"
+
+include "LibC9EAC993_h"
+
+//--------------------------------------------------------------------------------------------------
+// Library: Peregrine
+//--------------------------------------------------------------------------------------------------
+// External Library Initialization
+void libC9EAC993_InitLibraries () {
+    libNtve_InitVariables();
+}
+
+// Custom Script
+//--------------------------------------------------------------------------------------------------
+// Custom Script: IncludeScripts
+//--------------------------------------------------------------------------------------------------
+include "scripts/PeregrineLogic"
+
+void libC9EAC993_InitCustomScript () {
+}
+
+// Triggers
+//--------------------------------------------------------------------------------------------------
+// Trigger: PeregrineBoot
+//--------------------------------------------------------------------------------------------------
+bool libC9EAC993_gt_PeregrineBoot_Func (bool testConds, bool runActions) {
+    // Automatic Variable Declarations
+    // Actions
+    if (!runActions) {
+        return true;
+    }
+
+    Peregrine_Init();
+    return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+void libC9EAC993_gt_PeregrineBoot_Init () {
+    libC9EAC993_gt_PeregrineBoot = TriggerCreate("libC9EAC993_gt_PeregrineBoot_Func");
+    TriggerAddEventMapInit(libC9EAC993_gt_PeregrineBoot);
+}
+
+void libC9EAC993_InitTriggers () {
+    libC9EAC993_gt_PeregrineBoot_Init();
+}
+
+//--------------------------------------------------------------------------------------------------
+// Library Initialization
+//--------------------------------------------------------------------------------------------------
+bool libC9EAC993_InitLib_completed = false;
+
+void libC9EAC993_InitLib () {
+    if (libC9EAC993_InitLib_completed) {
+        return;
+    }
+
+    libC9EAC993_InitLib_completed = true;
+
+    libC9EAC993_InitLibraries();
+    libC9EAC993_InitCustomScript();
+    libC9EAC993_InitTriggers();
+}
+
