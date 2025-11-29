@@ -8,40 +8,35 @@
              <AIBuilds index="215" Enabled="1"/> -->
     </CGame>
 
-    <CUser id="PeregrineDraftConfig">
-        <Fields Id="WorkerCount" Type="Int"/>
-        <Fields Id="Minerals" Type="Int"/>
-        <Fields Id="Vespene" Type="Int"/>
-        <Instances Id="DraftSettings">
-            <Int Int="12">
-                <Field Id="WorkerCount"/>
-            </Int>
-            <Int Int="50">
-                <Field Id="Minerals"/>
-            </Int>
-            <Int Int="0">
-                <Field Id="Vespene"/>
-            </Int>
-        </Instances>
-    </CUser>
-
-    <CUser id="PeregrineRaceConfig">
+    <CUser id="PeregrineRaceStartConfig">
         <Fields Id="TownHall" Type="GameLink" GameLinkType="Unit"/>
         <Fields Id="Worker" Type="GameLink" GameLinkType="Unit"/>
         <Fields Id="ExtraUnit" Type="GameLink" GameLinkType="Unit"/>
+        <Fields Id="WorkerCount" Type="Int"/>
+        <Fields Id="Minerals" Type="Int"/>
+        <Fields Id="Vespene" Type="Int"/>
         
         <Instances Id="Terran">
             <GameLink GameLink="CommandCenter"><Field Id="TownHall"/></GameLink>
             <GameLink GameLink="SCV"><Field Id="Worker"/></GameLink>
+            <Int Int="12"><Field Id="WorkerCount"/></Int>
+            <Int Int="50"><Field Id="Minerals"/></Int>
+            <Int Int="0"><Field Id="Vespene"/></Int>
         </Instances>
         <Instances Id="Protoss">
             <GameLink GameLink="Nexus"><Field Id="TownHall"/></GameLink>
             <GameLink GameLink="Probe"><Field Id="Worker"/></GameLink>
+            <Int Int="12"><Field Id="WorkerCount"/></Int>
+            <Int Int="50"><Field Id="Minerals"/></Int>
+            <Int Int="0"><Field Id="Vespene"/></Int>
         </Instances>
         <Instances Id="Zerg">
             <GameLink GameLink="Hatchery"><Field Id="TownHall"/></GameLink>
             <GameLink GameLink="Drone"><Field Id="Worker"/></GameLink>
             <GameLink GameLink="Overlord"><Field Id="ExtraUnit"/></GameLink>
+            <Int Int="12"><Field Id="WorkerCount"/></Int>
+            <Int Int="50"><Field Id="Minerals"/></Int>
+            <Int Int="0"><Field Id="Vespene"/></Int>
         </Instances>
     </CUser>
 </Catalog>

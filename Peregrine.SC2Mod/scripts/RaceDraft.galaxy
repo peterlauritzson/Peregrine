@@ -44,25 +44,26 @@ string RaceName(int race) {
 string GetRaceUnitType(int race, string field) {
     string raceId = GetRaceConfigId(race);
     if (raceId == "") { return ""; }
-    return UserDataGetGameLink("PeregrineRaceConfig", raceId, field, 1);
+    return UserDataGetGameLink("PeregrineRaceStartConfig", raceId, field, 1);
 }
 
 //--------------------------------------------------------------------------------------------------
-// Helper: Get Draft Config
+// Helper: Get Race Start Config Int
 //--------------------------------------------------------------------------------------------------
-int GetDraftConfigInt(string field) {
-    // UserDataGetInt(UserType, UserInstance, FieldName, Index)
-    return UserDataGetInt("PeregrineDraftConfig", "DraftSettings", field, 1);
+int GetRaceStartConfigInt(int race, string field) {
+    string raceId = GetRaceConfigId(race);
+    if (raceId == "") { return 0; }
+    return UserDataGetInt("PeregrineRaceStartConfig", raceId, field, 1);
 }
 
 //--------------------------------------------------------------------------------------------------
 // Debug: Dump Config
 //--------------------------------------------------------------------------------------------------
-void DumpDraftConfigToLog() {
-    string dump = "--- Draft Config Dump ---\n";
-    dump = dump + "WorkerCount: " + IntToString(GetDraftConfigInt("WorkerCount")) + "\n";
-    dump = dump + "Minerals:    " + IntToString(GetDraftConfigInt("Minerals")) + "\n";
-    dump = dump + "Vespene:     " + IntToString(GetDraftConfigInt("Vespene")) + "\n";
+void DumpDraftConfigToLog(int race) {
+    string dump = "--- Draft Config Dump (" + RaceName(race) + ") ---\n";
+    dump = dump + "WorkerCount: " + IntToString(GetRaceStartConfigInt(race, "WorkerCount")) + "\n";
+    dump = dump + "Minerals:    " + IntToString(GetRaceStartConfigInt(race, "Minerals")) + "\n";
+    dump = dump + "Vespene:     " + IntToString(GetRaceStartConfigInt(race, "Vespene")) + "\n";
     dump = dump + "-------------------------";
     
     TriggerDebugOutput(1, StringToText(dump), true);
@@ -79,11 +80,11 @@ void SetPlayerRace(int player, int race) {
     string workerType;
     string extraUnitType;
     int i;
-    int workerCount = GetDraftConfigInt("WorkerCount");
-    int minerals = GetDraftConfigInt("Minerals");
-    int vespene = GetDraftConfigInt("Vespene");
+    int workerCount = GetRaceStartConfigInt(race, "WorkerCount");
+    int minerals = GetRaceStartConfigInt(race, "Minerals");
+    int vespene = GetRaceStartConfigInt(race, "Vespene");
 
-    DumpDraftConfigToLog();
+    DumpDraftConfigToLog(race);
 
     // 1. Determine Unit Types
     townHallType = GetRaceUnitType(race, "TownHall");
