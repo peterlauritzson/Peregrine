@@ -66,7 +66,7 @@ void DumpDraftConfigToLog(int race) {
     dump = dump + "Vespene:     " + IntToString(GetRaceStartConfigInt(race, "Vespene")) + "\n";
     dump = dump + "-------------------------";
     
-    TriggerDebugOutput(1, StringToText(dump), true);
+    Debug_Log(dump);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -175,7 +175,7 @@ void RaceDraft_Finish(int pickedRace) {
     } else {
         // Debug Mode: Don't overwrite P1's units. Just announce it.
         msg = "DEBUG: Player 2 (You) would have been " + RaceName(pickedRace);
-        UIDisplayMessage(PlayerGroupAll(), c_messageAreaChat, StringToText(msg));
+        Debug_Log(msg);
     }
 
     // Cleanup UI
@@ -277,7 +277,7 @@ void RaceDraft_Start() {
     // DEBUG: Handle Single Player Testing
     if (PlayerGroupCount(pg) < 2) {
         p2 = p1;
-        UIDisplayMessage(PlayerGroupAll(), c_messageAreaChat, StringToText("⚠️ DEBUG MODE: Solo Testing Active. You control both sides."));
+        Debug_Log("⚠️ DEBUG MODE: Solo Testing Active. You control both sides.");
     } else {
         p2 = PlayerGroupPlayer(pg, 2);
     }

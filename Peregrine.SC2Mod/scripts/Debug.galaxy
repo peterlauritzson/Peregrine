@@ -1,0 +1,32 @@
+//--------------------------------------------------------------------------------------------------
+// Debug System
+//--------------------------------------------------------------------------------------------------
+
+// Constants
+const int c_debug_None = 0;
+const int c_debug_All = 1;
+
+// Global State
+int g_debugLevel = c_debug_None;
+
+//--------------------------------------------------------------------------------------------------
+// Initialize Debug Level
+//--------------------------------------------------------------------------------------------------
+void Debug_Init() {
+    // If only 1 player is active, assume testing environment
+    if (PlayerGroupCount(PlayerGroupActive()) == 1) {
+        g_debugLevel = c_debug_All;
+        TriggerDebugOutput(1, StringToText("Debug Mode: ENABLED"), true);
+    } else {
+        g_debugLevel = c_debug_None;
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+// Log Message
+//--------------------------------------------------------------------------------------------------
+void Debug_Log(string msg) {
+    if (g_debugLevel > c_debug_None) {
+        TriggerDebugOutput(1, StringToText(msg), true);
+    }
+}
