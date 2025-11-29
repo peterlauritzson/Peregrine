@@ -32,6 +32,27 @@ string RaceName(int race) {
 }
 
 //--------------------------------------------------------------------------------------------------
+// Helper: Get Draft Config
+//--------------------------------------------------------------------------------------------------
+int GetDraftConfigInt(string field) {
+    // UserDataGetInt(UserType, UserInstance, FieldName, Index)
+    return UserDataGetInt("PeregrineDraftConfig", "DraftSettings", field, 1);
+}
+
+//--------------------------------------------------------------------------------------------------
+// Debug: Dump Config
+//--------------------------------------------------------------------------------------------------
+void DumpDraftConfigToLog() {
+    string dump = "--- Draft Config Dump ---\n";
+    dump = dump + "WorkerCount: " + IntToString(GetDraftConfigInt("WorkerCount")) + "\n";
+    dump = dump + "Minerals:    " + IntToString(GetDraftConfigInt("Minerals")) + "\n";
+    dump = dump + "Vespene:     " + IntToString(GetDraftConfigInt("Vespene")) + "\n";
+    dump = dump + "-------------------------";
+    
+    TriggerDebugOutput(1, StringToText(dump), true);
+}
+
+//--------------------------------------------------------------------------------------------------
 // Helper: Replace Army
 //--------------------------------------------------------------------------------------------------
 void SetPlayerRace(int player, int race) {
@@ -41,6 +62,11 @@ void SetPlayerRace(int player, int race) {
     string townHallType;
     string workerType;
     int i;
+    int workerCount = GetDraftConfigInt("WorkerCount");
+    int minerals = GetDraftConfigInt("Minerals");
+    int vespene = GetDraftConfigInt("Vespene");
+
+    DumpDraftConfigToLog();
 
     // 1. Determine Unit Types
     if (race == c_peregrine_raceTerran) {
@@ -81,7 +107,7 @@ void SetPlayerRace(int player, int race) {
 
     // 4. Spawn New Units
     libNtve_gf_CreateUnitsWithDefaultFacing(1, townHallType, 0, player, startLoc);
-    libNtve_gf_CreateUnitsWithDefaultFacing(12, workerType, 0, player, startLoc);
+    libNtve_gf_CreateUnitsWithDefaultFacing(workerCount, workerType, 0, player, startLoc);
     
     // Zerg needs an Overlord
     if (race == c_peregrine_raceZerg) {
@@ -89,8 +115,8 @@ void SetPlayerRace(int player, int race) {
     }
 
     // 5. Set Resources (Standard Melee Start)
-    PlayerModifyPropertyInt(player, c_playerPropMinerals, c_playerPropOperSetTo, 50);
-    PlayerModifyPropertyInt(player, c_playerPropVespene, c_playerPropOperSetTo, 0);
+    PlayerModifyPropertyInt(player, c_playerPropMinerals, c_playerPropOperSetTo, minerals);
+    PlayerModifyPropertyInt(player, c_playerPropVespene, c_playerPropOperSetTo, vespene);
 }
 
 //--------------------------------------------------------------------------------------------------

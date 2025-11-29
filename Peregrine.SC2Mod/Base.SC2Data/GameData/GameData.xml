@@ -7,4 +7,21 @@
              <AIBuilds index="214" Enabled="0"/>
              <AIBuilds index="215" Enabled="1"/> -->
     </CGame>
+
+    <CUser id="PeregrineDraftConfig">
+        <Fields Id="WorkerCount" Type="Int"/>
+        <Fields Id="Minerals" Type="Int"/>
+        <Fields Id="Vespene" Type="Int"/>
+        <Instances Id="DraftSettings">
+            <Int Int="12">
+                <Field Id="WorkerCount"/>
+            </Int>
+            <Int Int="50">
+                <Field Id="Minerals"/>
+            </Int>
+            <Int Int="0">
+                <Field Id="Vespene"/>
+            </Int>
+        </Instances>
+    </CUser>
 </Catalog>
