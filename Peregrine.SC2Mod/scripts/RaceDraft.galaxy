@@ -22,13 +22,29 @@ int g_draft_btnProtoss = c_invalidDialogControlId;
 int g_draft_btnZerg = c_invalidDialogControlId;
 
 //--------------------------------------------------------------------------------------------------
-// Helper: Get Race Name
+// Helper: Get Race Config ID
 //--------------------------------------------------------------------------------------------------
-string RaceName(int race) {
+string GetRaceConfigId(int race) {
     if (race == c_peregrine_raceTerran) { return "Terran"; }
     if (race == c_peregrine_raceProtoss) { return "Protoss"; }
     if (race == c_peregrine_raceZerg) { return "Zerg"; }
-    return "Unknown";
+    return "";
+}
+
+//--------------------------------------------------------------------------------------------------
+// Helper: Get Race Name
+//--------------------------------------------------------------------------------------------------
+string RaceName(int race) {
+    return GetRaceConfigId(race);
+}
+
+//--------------------------------------------------------------------------------------------------
+// Helper: Get Race Unit Type
+//--------------------------------------------------------------------------------------------------
+string GetRaceUnitType(int race, string field) {
+    string raceId = GetRaceConfigId(race);
+    if (raceId == "") { return ""; }
+    return UserDataGetGameLink("PeregrineRaceConfig", raceId, field, 1);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -61,6 +77,7 @@ void SetPlayerRace(int player, int race) {
     point startLoc;
     string townHallType;
     string workerType;
+    string extraUnitType;
     int i;
     int workerCount = GetDraftConfigInt("WorkerCount");
     int minerals = GetDraftConfigInt("Minerals");
@@ -69,18 +86,9 @@ void SetPlayerRace(int player, int race) {
     DumpDraftConfigToLog();
 
     // 1. Determine Unit Types
-    if (race == c_peregrine_raceTerran) {
-        townHallType = "CommandCenter";
-        workerType = "SCV";
-    }
-    else if (race == c_peregrine_raceProtoss) {
-        townHallType = "Nexus";
-        workerType = "Probe";
-    }
-    else if (race == c_peregrine_raceZerg) {
-        townHallType = "Hatchery";
-        workerType = "Drone";
-    }
+    townHallType = GetRaceUnitType(race, "TownHall");
+    workerType = GetRaceUnitType(race, "Worker");
+    extraUnitType = GetRaceUnitType(race, "ExtraUnit");
 
     // 2. Find Start Location (where the current Town Hall is)
     existingUnits = UnitGroup(null, player, RegionEntireMap(), UnitFilter(0, 0, (1 << c_targetFilterMissile), (1 << (c_targetFilterDead - 32)) | (1 << (c_targetFilterHidden - 32))), 0);
@@ -109,9 +117,9 @@ void SetPlayerRace(int player, int race) {
     libNtve_gf_CreateUnitsWithDefaultFacing(1, townHallType, 0, player, startLoc);
     libNtve_gf_CreateUnitsWithDefaultFacing(workerCount, workerType, 0, player, startLoc);
     
-    // Zerg needs an Overlord
-    if (race == c_peregrine_raceZerg) {
-        libNtve_gf_CreateUnitsWithDefaultFacing(1, "Overlord", 0, player, startLoc);
+    // Spawn Extra Unit (e.g. Overlord) if defined
+    if (extraUnitType != "") {
+        libNtve_gf_CreateUnitsWithDefaultFacing(1, extraUnitType, 0, player, startLoc);
     }
 
     // 5. Set Resources (Standard Melee Start)

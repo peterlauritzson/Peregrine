@@ -24,4 +24,24 @@
             </Int>
         </Instances>
     </CUser>
+
+    <CUser id="PeregrineRaceConfig">
+        <Fields Id="TownHall" Type="GameLink" GameLinkType="Unit"/>
+        <Fields Id="Worker" Type="GameLink" GameLinkType="Unit"/>
+        <Fields Id="ExtraUnit" Type="GameLink" GameLinkType="Unit"/>
+        
+        <Instances Id="Terran">
+            <GameLink GameLink="CommandCenter"><Field Id="TownHall"/></GameLink>
+            <GameLink GameLink="SCV"><Field Id="Worker"/></GameLink>
+        </Instances>
+        <Instances Id="Protoss">
+            <GameLink GameLink="Nexus"><Field Id="TownHall"/></GameLink>
+            <GameLink GameLink="Probe"><Field Id="Worker"/></GameLink>
+        </Instances>
+        <Instances Id="Zerg">
+            <GameLink GameLink="Hatchery"><Field Id="TownHall"/></GameLink>
+            <GameLink GameLink="Drone"><Field Id="Worker"/></GameLink>
+            <GameLink GameLink="Overlord"><Field Id="ExtraUnit"/></GameLink>
+        </Instances>
+    </CUser>
 </Catalog>
