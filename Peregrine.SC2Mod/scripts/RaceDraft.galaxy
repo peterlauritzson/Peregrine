@@ -10,6 +10,9 @@ const int c_peregrine_raceZerg = 3;
 // State
 int g_draft_p1; // The banning player
 int g_draft_p2; // The picking player
+playergroup g_draft_team1; // Team 1 Players
+playergroup g_draft_team2; // Team 2 Players
+bool g_draft_p1_is_team1; // True if P1 (Banner) represents Team 1
 int g_draft_bannedRace = 0;
 int g_draft_phase = 0; // 0 = Ban, 1 = Pick
 trigger g_draft_trigger;
@@ -129,6 +132,21 @@ void SetPlayerRace(int player, int race) {
 }
 
 //--------------------------------------------------------------------------------------------------
+// Helper: Replace Army for Team
+//--------------------------------------------------------------------------------------------------
+void SetTeamRace(playergroup team, int race) {
+    int i = 1;
+    int count = PlayerGroupCount(team);
+    int p;
+
+    while (i <= count) {
+        p = PlayerGroupPlayer(team, i);
+        SetPlayerRace(p, race);
+        i = i + 1;
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
 // Helper: Remove Workers
 //--------------------------------------------------------------------------------------------------
 void RemoveWorkers() {
@@ -160,6 +178,8 @@ void RemoveWorkers() {
 //--------------------------------------------------------------------------------------------------
 void RaceDraft_Finish(int pickedRace) {
     int p1Race;
+    int t1Race;
+    int t2Race;
     string msg;
     
     // Determine P1's race (The one that wasn't banned and wasn't picked)
@@ -167,17 +187,20 @@ void RaceDraft_Finish(int pickedRace) {
     else if (g_draft_bannedRace != c_peregrine_raceProtoss && pickedRace != c_peregrine_raceProtoss) { p1Race = c_peregrine_raceProtoss; }
     else { p1Race = c_peregrine_raceZerg; }
 
-    // Apply
-    SetPlayerRace(g_draft_p1, p1Race);
-    
-    if (g_draft_p1 != g_draft_p2) {
-        SetPlayerRace(g_draft_p2, pickedRace);
+    // Apply to Teams
+    // P1 is the Banner. They get the "Remainder" race (p1Race).
+    // P2 is the Picker. They get the "Picked" race (pickedRace).
+    if (g_draft_p1_is_team1) {
+        t1Race = p1Race;
+        t2Race = pickedRace;
     } else {
-        // Debug Mode: Don't overwrite P1's units. Just announce it.
-        msg = "DEBUG: Player 2 (You) would have been " + RaceName(pickedRace);
-        Debug_Log(msg);
+        t1Race = pickedRace;
+        t2Race = p1Race;
     }
 
+    SetTeamRace(g_draft_team1, t1Race);
+    SetTeamRace(g_draft_team2, t2Race);
+    
     // Cleanup UI
     DialogDestroy(g_draft_dialog);
     
@@ -185,7 +208,7 @@ void RaceDraft_Finish(int pickedRace) {
     GameSetMissionTimePaused(false);
 
     // Announce
-    msg = "Draft Complete! Player 1: " + RaceName(p1Race) + ", Player 2: " + RaceName(pickedRace);
+    msg = "Draft Complete! Team 1: " + RaceName(t1Race) + ", Team 2: " + RaceName(t2Race);
     UIDisplayMessage(PlayerGroupAll(), c_messageAreaChat, StringToText(msg));
 }
 
@@ -267,28 +290,98 @@ bool RaceDraft_OnClicked(bool testConds, bool runActions) {
 // Main: Start Draft
 //--------------------------------------------------------------------------------------------------
 void RaceDraft_Start() {
-    playergroup pg = PlayerGroupActive();
-    int p1 = PlayerGroupPlayer(pg, 1);
-    int p2;
+    int i;
+    int p;
+    int decider1 = 0;
+    int decider2 = 0;
+    bool team1HasHuman = false;
+    bool team2HasHuman = false;
+    int team1Leader = 0;
+    int team2Leader = 0;
+
+    // Initialize Groups
+    g_draft_team1 = PlayerGroupEmpty();
+    g_draft_team2 = PlayerGroupEmpty();
 
     // Wait for initialization to complete (units to spawn)
     Wait(0.1, c_timeGame);
 
-    // DEBUG: Handle Single Player Testing
-    if (PlayerGroupCount(pg) < 2) {
-        p2 = p1;
-        Debug_Log("⚠️ DEBUG MODE: Solo Testing Active. You control both sides.");
-    } else {
-        p2 = PlayerGroupPlayer(pg, 2);
+    // 1. Scan Players and Teams
+    i = 1;
+    while (i <= 15) { // Max players usually
+        if (PlayerStatus(i) == c_playerStatusActive) {
+            
+            // Logic: Determine Team based on Alliance
+            // If Team 1 is empty, start it
+            if (PlayerGroupCount(g_draft_team1) == 0) {
+                PlayerGroupAdd(g_draft_team1, i);
+                team1Leader = i;
+                if (PlayerType(i) == c_playerTypeUser) {
+                    team1HasHuman = true;
+                    decider1 = i;
+                }
+            }
+            // Check if allied with Team 1 Leader (Passive Alliance is the standard "Ally" check)
+            else if (PlayerGetAlliance(i, team1Leader, c_allianceIdPassive)) {
+                PlayerGroupAdd(g_draft_team1, i);
+                if (PlayerType(i) == c_playerTypeUser) {
+                    team1HasHuman = true;
+                    if (decider1 == 0) { decider1 = i; }
+                }
+            }
+            // If Team 2 is empty, start it
+            else if (PlayerGroupCount(g_draft_team2) == 0) {
+                PlayerGroupAdd(g_draft_team2, i);
+                team2Leader = i;
+                if (PlayerType(i) == c_playerTypeUser) {
+                    team2HasHuman = true;
+                    decider2 = i;
+                }
+            }
+            // Check if allied with Team 2 Leader
+            else if (PlayerGetAlliance(i, team2Leader, c_allianceIdPassive)) {
+                PlayerGroupAdd(g_draft_team2, i);
+                if (PlayerType(i) == c_playerTypeUser) {
+                    team2HasHuman = true;
+                    if (decider2 == 0) { decider2 = i; }
+                }
+            }
+            else {
+                // Error: 3rd team found or unallied player
+                UIDisplayMessage(PlayerGroupAll(), c_messageAreaChat, StringToText("Error: More than 2 teams detected. Draft aborted."));
+                return;
+            }
+        }
+        i = i + 1;
     }
 
-    // Randomize who goes first
+    // 2. Handle Solo / PvAI (One team has no humans)
+    if (!team1HasHuman && !team2HasHuman) {
+        // All AI? Just return.
+        Debug_Log("Draft Skipped: No human players found.");
+        return; 
+    }
+    
+    if (team1HasHuman && !team2HasHuman) {
+        // Team 1 is sole human team. Decider1 decides for both.
+        decider2 = decider1;
+        Debug_Log("Solo/PvAI Mode: Player " + IntToString(decider1) + " controls draft.");
+    }
+    else if (!team1HasHuman && team2HasHuman) {
+        // Team 2 is sole human team. Decider2 decides for both.
+        decider1 = decider2;
+        Debug_Log("Solo/PvAI Mode: Player " + IntToString(decider2) + " controls draft.");
+    }
+
+    // 3. Assign Draft Roles (Randomize who bans/picks)
     if (RandomInt(0, 1) == 0) {
-        g_draft_p1 = p1;
-        g_draft_p2 = p2;
+        g_draft_p1 = decider1; // Team 1 Bans
+        g_draft_p2 = decider2; // Team 2 Picks
+        g_draft_p1_is_team1 = true;
     } else {
-        g_draft_p1 = p2;
-        g_draft_p2 = p1;
+        g_draft_p1 = decider2; // Team 2 Bans
+        g_draft_p2 = decider1; // Team 1 Picks
+        g_draft_p1_is_team1 = false;
     }
 
     // Pause Game
@@ -303,23 +396,23 @@ void RaceDraft_Start() {
     // Label
     g_draft_label = DialogControlCreate(g_draft_dialog, c_triggerControlTypeLabel);
     DialogControlSetSize(g_draft_label, PlayerGroupAll(), 400, 50);
-    DialogControlSetPosition(g_draft_label, PlayerGroupAll(), c_anchorTop, 0, 50);
+    DialogControlSetPosition(g_draft_label, PlayerGroupAll(), c_anchorTop, 0, 80);
     DialogControlSetPropertyAsText(g_draft_label, c_triggerControlPropertyText, PlayerGroupAll(), StringToText("Initializing..."));
 
     // Buttons
     g_draft_btnTerran = DialogControlCreate(g_draft_dialog, c_triggerControlTypeButton);
     DialogControlSetSize(g_draft_btnTerran, PlayerGroupAll(), 200, 50);
-    DialogControlSetPosition(g_draft_btnTerran, PlayerGroupAll(), c_anchorTop, 0, 120);
+    DialogControlSetPosition(g_draft_btnTerran, PlayerGroupAll(), c_anchorTop, 0, 150);
     DialogControlSetPropertyAsText(g_draft_btnTerran, c_triggerControlPropertyText, PlayerGroupAll(), StringToText("Terran"));
 
     g_draft_btnProtoss = DialogControlCreate(g_draft_dialog, c_triggerControlTypeButton);
     DialogControlSetSize(g_draft_btnProtoss, PlayerGroupAll(), 200, 50);
-    DialogControlSetPosition(g_draft_btnProtoss, PlayerGroupAll(), c_anchorTop, 0, 180);
+    DialogControlSetPosition(g_draft_btnProtoss, PlayerGroupAll(), c_anchorTop, 0, 210);
     DialogControlSetPropertyAsText(g_draft_btnProtoss, c_triggerControlPropertyText, PlayerGroupAll(), StringToText("Protoss"));
 
     g_draft_btnZerg = DialogControlCreate(g_draft_dialog, c_triggerControlTypeButton);
     DialogControlSetSize(g_draft_btnZerg, PlayerGroupAll(), 200, 50);
-    DialogControlSetPosition(g_draft_btnZerg, PlayerGroupAll(), c_anchorTop, 0, 240);
+    DialogControlSetPosition(g_draft_btnZerg, PlayerGroupAll(), c_anchorTop, 0, 270);
     DialogControlSetPropertyAsText(g_draft_btnZerg, c_triggerControlPropertyText, PlayerGroupAll(), StringToText("Zerg"));
 
     // Register Trigger
