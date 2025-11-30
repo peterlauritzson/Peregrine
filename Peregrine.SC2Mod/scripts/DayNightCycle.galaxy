@@ -6,16 +6,20 @@ include "TriggerLibs/NativeLib"
 include "scripts/Debug"
 
 // Constants
-const fixed c_phaseDuration = 60.0;
+const fixed c_phaseDuration = 10.0;
 const fixed c_transitionDuration = 2.0;
 
-const string c_lightBlue = "Avernus";
-const string c_lightGreen = "Agria";
-const string c_lightRed = "NewFolsom";
+const string c_lightNight = "MarSaraNightTest";
+const string c_lightDay = "MarSaraDayTest";
+const string c_lightDusk = "BelShirSunset";
 
-const string c_iconBlue = "Assets\\Textures\\UI_Battlenet_Glue_MiniButton_Blue_NormalPressed.dds";
-const string c_iconGreen = "Assets\\Textures\\UI_Battlenet_Glue_MiniButton_Green_NormalPressed.dds";
-const string c_iconRed = "Assets\\Textures\\UI_Battlenet_Glue_MiniButton_Orange_NormalPressed.dds";
+const string c_soundNight = "UI_TerranKlaxonAlert";
+const string c_soundDay = "UI_ObjectiveComplete";
+const string c_soundDusk = "UI_ObjectiveUpdate";
+
+const string c_iconNight = "Assets\\Textures\\UI_Battlenet_Glue_MiniButton_Blue_NormalPressed.dds";
+const string c_iconDay = "Assets\\Textures\\UI_Battlenet_Glue_MiniButton_Green_NormalPressed.dds";
+const string c_iconDusk = "Assets\\Textures\\UI_Battlenet_Glue_MiniButton_Orange_NormalPressed.dds";
 
 // UI Globals
 int g_dnc_dialog = c_invalidDialogId;
@@ -127,16 +131,26 @@ void DayNightCycle_Start() {
 //--------------------------------------------------------------------------------------------------
 // Helper: Run Phase
 //--------------------------------------------------------------------------------------------------
-void DayNightCycle_RunPhase(string phaseName, string light, string currentIcon, string nextIcon) {
+void DayNightCycle_RunPhase(string phaseName, string light, string soundId, string currentIcon, string nextIcon) {
     int i;
+    bool isValid;
     
     // Update UI
     DialogControlSetPropertyAsString(g_dnc_imgCurrent, c_triggerControlPropertyImage, PlayerGroupAll(), currentIcon);
     DialogControlSetPropertyAsString(g_dnc_imgNext, c_triggerControlPropertyImage, PlayerGroupAll(), nextIcon);
     
-    // Set Lighting
-    Debug_Log("Setting Lighting to: " + light);
-    GameSetLighting(light, c_transitionDuration);
+    // Play Sound
+    Debug_Log("Playing Sound: " + soundId);
+    SoundPlayForPlayer(SoundLink(soundId, c_soundIndexAny), c_playerAny, PlayerGroupAll(), 100.0, 0.0);
+
+    // Check if light exists
+    isValid = CatalogEntryIsValid(c_gameCatalogLight, light);
+    if (isValid) {
+        Debug_Log("Setting Lighting to: " + light + " (Valid)");
+        GameSetLighting(light, c_transitionDuration);
+    } else {
+        Debug_Log("ERROR: Lighting '" + light + "' is NOT valid!");
+    }
 
     // Timer Loop
     i = FixedToInt(c_phaseDuration);
@@ -152,13 +166,13 @@ void DayNightCycle_RunPhase(string phaseName, string light, string currentIcon, 
 //--------------------------------------------------------------------------------------------------
 void DayNightCycle_Loop() {
     while (true) {
-        // Blue Phase -> Next is Green
-        DayNightCycle_RunPhase("Blue", c_lightBlue, c_iconBlue, c_iconGreen);
+        // Day Phase -> Next is Dusk
+        DayNightCycle_RunPhase("Day", c_lightDay, c_soundDay, c_iconDay, c_iconDusk);
 
-        // Green Phase -> Next is Red
-        DayNightCycle_RunPhase("Green", c_lightGreen, c_iconGreen, c_iconRed);
+        // Dusk Phase -> Next is Night
+        DayNightCycle_RunPhase("Dusk", c_lightDusk, c_soundDusk, c_iconDusk, c_iconNight);
 
-        // Red Phase -> Next is Blue
-        DayNightCycle_RunPhase("Red", c_lightRed, c_iconRed, c_iconBlue);
+        // Night Phase -> Next is Day
+        DayNightCycle_RunPhase("Night", c_lightNight, c_soundNight, c_iconNight, c_iconDay);
     }
 }
