@@ -5,21 +5,21 @@
 include "TriggerLibs/NativeLib"
 include "scripts/Debug"
 
-// Constants
-const fixed c_phaseDuration = 10.0;
-const fixed c_transitionDuration = 2.0;
+// Constants (Config Loaded from XML)
+fixed g_dnc_phaseDuration;
+fixed g_dnc_transitionDuration;
 
-const string c_lightNight = "MarSaraNightTest";
-const string c_lightDay = "MarSaraDayTest";
-const string c_lightDusk = "BelShirSunset";
+string g_dnc_lightNight;
+string g_dnc_lightDay;
+string g_dnc_lightDusk;
 
-const string c_soundNight = "UI_TerranKlaxonAlert";
-const string c_soundDay = "UI_ObjectiveComplete";
-const string c_soundDusk = "UI_ObjectiveUpdate";
+string g_dnc_soundNight;
+string g_dnc_soundDay;
+string g_dnc_soundDusk;
 
-const string c_iconNight = "Assets\\Textures\\UI_Battlenet_Glue_MiniButton_Blue_NormalPressed.dds";
-const string c_iconDay = "Assets\\Textures\\UI_Battlenet_Glue_MiniButton_Green_NormalPressed.dds";
-const string c_iconDusk = "Assets\\Textures\\UI_Battlenet_Glue_MiniButton_Orange_NormalPressed.dds";
+string g_dnc_iconNight;
+string g_dnc_iconDay;
+string g_dnc_iconDusk;
 
 // UI Globals
 int g_dnc_dialog = c_invalidDialogId;
@@ -66,6 +66,31 @@ bool DayNightCycle_OnMinimize(bool testConds, bool runActions) {
         g_dnc_isCollapsed = true;
     }
     return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+// Helper: Load Config
+//--------------------------------------------------------------------------------------------------
+void DayNightCycle_LoadConfig() {
+    string configId = "PeregrineDayNightConfig";
+    string instanceId = "Default";
+    
+    g_dnc_phaseDuration = UserDataGetFixed(configId, instanceId, "PhaseDuration", 1);
+    g_dnc_transitionDuration = UserDataGetFixed(configId, instanceId, "TransitionDuration", 1);
+    
+    g_dnc_lightDay = UserDataGetGameLink(configId, instanceId, "LightDay", 1);
+    g_dnc_lightDusk = UserDataGetGameLink(configId, instanceId, "LightDusk", 1);
+    g_dnc_lightNight = UserDataGetGameLink(configId, instanceId, "LightNight", 1);
+    
+    g_dnc_soundDay = UserDataGetGameLink(configId, instanceId, "SoundDay", 1);
+    g_dnc_soundDusk = UserDataGetGameLink(configId, instanceId, "SoundDusk", 1);
+    g_dnc_soundNight = UserDataGetGameLink(configId, instanceId, "SoundNight", 1);
+    
+    g_dnc_iconDay = UserDataGetString(configId, instanceId, "IconDay", 1);
+    g_dnc_iconDusk = UserDataGetString(configId, instanceId, "IconDusk", 1);
+    g_dnc_iconNight = UserDataGetString(configId, instanceId, "IconNight", 1);
+
+    Debug_Log("DayNightCycle Config Loaded.");
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -122,6 +147,7 @@ void DayNightCycle_Start() {
     trigger t;
     // Ensure we don't create UI twice
     if (g_dnc_dialog == c_invalidDialogId) {
+        DayNightCycle_LoadConfig();
         DayNightCycle_InitUI();
         t = TriggerCreate("DayNightCycle_LoopTrigger");
         TriggerExecute(t, false, false);
@@ -147,13 +173,13 @@ void DayNightCycle_RunPhase(string phaseName, string light, string soundId, stri
     isValid = CatalogEntryIsValid(c_gameCatalogLight, light);
     if (isValid) {
         Debug_Log("Setting Lighting to: " + light + " (Valid)");
-        GameSetLighting(light, c_transitionDuration);
+        GameSetLighting(light, g_dnc_transitionDuration);
     } else {
         Debug_Log("ERROR: Lighting '" + light + "' is NOT valid!");
     }
 
     // Timer Loop
-    i = FixedToInt(c_phaseDuration);
+    i = FixedToInt(g_dnc_phaseDuration);
     while (i > 0) {
         DialogControlSetPropertyAsText(g_dnc_lblTimer, c_triggerControlPropertyText, PlayerGroupAll(), StringToText(IntToString(i)));
         Wait(1.0, c_timeGame);
@@ -167,12 +193,12 @@ void DayNightCycle_RunPhase(string phaseName, string light, string soundId, stri
 void DayNightCycle_Loop() {
     while (true) {
         // Day Phase -> Next is Dusk
-        DayNightCycle_RunPhase("Day", c_lightDay, c_soundDay, c_iconDay, c_iconDusk);
+        DayNightCycle_RunPhase("Day", g_dnc_lightDay, g_dnc_soundDay, g_dnc_iconDay, g_dnc_iconDusk);
 
         // Dusk Phase -> Next is Night
-        DayNightCycle_RunPhase("Dusk", c_lightDusk, c_soundDusk, c_iconDusk, c_iconNight);
+        DayNightCycle_RunPhase("Dusk", g_dnc_lightDusk, g_dnc_soundDusk, g_dnc_iconDusk, g_dnc_iconNight);
 
         // Night Phase -> Next is Day
-        DayNightCycle_RunPhase("Night", c_lightNight, c_soundNight, c_iconNight, c_iconDay);
+        DayNightCycle_RunPhase("Night", g_dnc_lightNight, g_dnc_soundNight, g_dnc_iconNight, g_dnc_iconDay);
     }
 }

@@ -39,4 +39,32 @@
             <Int Int="0"><Field Id="Vespene"/></Int>
         </Instances>
     </CUser>
+
+    <CUser id="PeregrineDayNightConfig">
+        <Fields Id="PhaseDuration" Type="Fixed"/>
+        <Fields Id="TransitionDuration" Type="Fixed"/>
+        <Fields Id="LightDay" Type="GameLink" GameLinkType="Light"/>
+        <Fields Id="LightDusk" Type="GameLink" GameLinkType="Light"/>
+        <Fields Id="LightNight" Type="GameLink" GameLinkType="Light"/>
+        <Fields Id="SoundDay" Type="GameLink" GameLinkType="Sound"/>
+        <Fields Id="SoundDusk" Type="GameLink" GameLinkType="Sound"/>
+        <Fields Id="SoundNight" Type="GameLink" GameLinkType="Sound"/>
+        <Fields Id="IconDay" Type="String"/>
+        <Fields Id="IconDusk" Type="String"/>
+        <Fields Id="IconNight" Type="String"/>
+        
+        <Instances Id="Default">
+            <Fixed Fixed="10.0"><Field Id="PhaseDuration"/></Fixed>
+            <Fixed Fixed="2.0"><Field Id="TransitionDuration"/></Fixed>
+            <GameLink GameLink="MarSaraDayTest"><Field Id="LightDay"/></GameLink>
+            <GameLink GameLink="BelShirSunset"><Field Id="LightDusk"/></GameLink>
+            <GameLink GameLink="MarSaraNightTest"><Field Id="LightNight"/></GameLink>
+            <GameLink GameLink="UI_ObjectiveComplete"><Field Id="SoundDay"/></GameLink>
+            <GameLink GameLink="UI_ObjectiveUpdate"><Field Id="SoundDusk"/></GameLink>
+            <GameLink GameLink="UI_TerranKlaxonAlert"><Field Id="SoundNight"/></GameLink>
+            <String String="Assets\Textures\UI_Battlenet_Glue_MiniButton_Green_NormalPressed.dds"><Field Id="IconDay"/></String>
+            <String String="Assets\Textures\UI_Battlenet_Glue_MiniButton_Orange_NormalPressed.dds"><Field Id="IconDusk"/></String>
+            <String String="Assets\Textures\UI_Battlenet_Glue_MiniButton_Blue_NormalPressed.dds"><Field Id="IconNight"/></String>
+        </Instances>
+    </CUser>
 </Catalog>
