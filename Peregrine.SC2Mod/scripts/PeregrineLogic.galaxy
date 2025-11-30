@@ -4,9 +4,24 @@
 
 include "scripts/Debug"
 include "scripts/RaceDraft"
+include "scripts/DayNightCycle"
+
+//--------------------------------------------------------------------------------------------------
+// Callback: Run when Draft is complete
+//--------------------------------------------------------------------------------------------------
+bool Peregrine_OnDraftFinished(bool testConds, bool runActions) {
+    DayNightCycle_Start();
+    return true;
+}
 
 void Peregrine_Init() {
+    trigger t;
     Debug_Init();
     UIDisplayMessage(PlayerGroupAll(), c_messageAreaChat, StringToText("Peregrine Logic Loaded Successfully!"));
-    RaceDraft_Start();
+    
+    // Create the callback trigger
+    t = TriggerCreate("Peregrine_OnDraftFinished");
+    
+    // Start Draft with callback
+    RaceDraft_Start(t);
 }

@@ -16,6 +16,7 @@ bool g_draft_p1_is_team1; // True if P1 (Banner) represents Team 1
 int g_draft_bannedRace = 0;
 int g_draft_phase = 0; // 0 = Ban, 1 = Pick
 trigger g_draft_trigger;
+trigger g_draft_callback = null;
 
 // UI
 int g_draft_dialog = c_invalidDialogId;
@@ -207,6 +208,11 @@ void RaceDraft_Finish(int pickedRace) {
     // Unpause
     GameSetMissionTimePaused(false);
 
+    // Run Callback (Game Start)
+    if (g_draft_callback != null) {
+        TriggerExecute(g_draft_callback, false, false);
+    }
+
     // Announce
     msg = "Draft Complete! Team 1: " + RaceName(t1Race) + ", Team 2: " + RaceName(t2Race);
     UIDisplayMessage(PlayerGroupAll(), c_messageAreaChat, StringToText(msg));
@@ -289,7 +295,7 @@ bool RaceDraft_OnClicked(bool testConds, bool runActions) {
 //--------------------------------------------------------------------------------------------------
 // Main: Start Draft
 //--------------------------------------------------------------------------------------------------
-void RaceDraft_Start() {
+void RaceDraft_Start(trigger callback) {
     int i;
     int p;
     int decider1 = 0;
@@ -298,6 +304,9 @@ void RaceDraft_Start() {
     bool team2HasHuman = false;
     int team1Leader = 0;
     int team2Leader = 0;
+
+    // Store Callback
+    g_draft_callback = callback;
 
     // Initialize Groups
     g_draft_team1 = PlayerGroupEmpty();
@@ -359,6 +368,9 @@ void RaceDraft_Start() {
     if (!team1HasHuman && !team2HasHuman) {
         // All AI? Just return.
         Debug_Log("Draft Skipped: No human players found.");
+        if (g_draft_callback != null) {
+            TriggerExecute(g_draft_callback, false, false);
+        }
         return; 
     }
     

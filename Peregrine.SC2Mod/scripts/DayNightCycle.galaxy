@@ -1,0 +1,164 @@
+//--------------------------------------------------------------------------------------------------
+// Day/Night Cycle System
+//--------------------------------------------------------------------------------------------------
+
+include "TriggerLibs/NativeLib"
+include "scripts/Debug"
+
+// Constants
+const fixed c_phaseDuration = 60.0;
+const fixed c_transitionDuration = 2.0;
+
+const string c_lightBlue = "Avernus";
+const string c_lightGreen = "Agria";
+const string c_lightRed = "NewFolsom";
+
+const string c_iconBlue = "Assets\\Textures\\UI_Battlenet_Glue_MiniButton_Blue_NormalPressed.dds";
+const string c_iconGreen = "Assets\\Textures\\UI_Battlenet_Glue_MiniButton_Green_NormalPressed.dds";
+const string c_iconRed = "Assets\\Textures\\UI_Battlenet_Glue_MiniButton_Orange_NormalPressed.dds";
+
+// UI Globals
+int g_dnc_dialog = c_invalidDialogId;
+int g_dnc_lblTitle = c_invalidDialogControlId;
+int g_dnc_imgCurrent = c_invalidDialogControlId;
+int g_dnc_imgNext = c_invalidDialogControlId;
+int g_dnc_lblTimer = c_invalidDialogControlId;
+int g_dnc_btnMinimize = c_invalidDialogControlId;
+bool g_dnc_isCollapsed = false;
+trigger g_dnc_trigMinimize = null;
+
+// Forward Declaration
+void DayNightCycle_Loop();
+
+//--------------------------------------------------------------------------------------------------
+// Trigger Action: The Loop
+//--------------------------------------------------------------------------------------------------
+bool DayNightCycle_LoopTrigger(bool testConds, bool runActions) {
+    DayNightCycle_Loop();
+    return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+// Handler: Minimize Button
+//--------------------------------------------------------------------------------------------------
+bool DayNightCycle_OnMinimize(bool testConds, bool runActions) {
+    if (g_dnc_isCollapsed) {
+        // Expand
+        DialogSetSize(g_dnc_dialog, 300, 110);
+        DialogControlSetVisible(g_dnc_lblTitle, PlayerGroupAll(), true);
+        DialogControlSetVisible(g_dnc_imgCurrent, PlayerGroupAll(), true);
+        DialogControlSetVisible(g_dnc_imgNext, PlayerGroupAll(), true);
+        DialogControlSetVisible(g_dnc_lblTimer, PlayerGroupAll(), true);
+        DialogControlSetPropertyAsText(g_dnc_btnMinimize, c_triggerControlPropertyText, PlayerGroupAll(), StringToText("-"));
+        g_dnc_isCollapsed = false;
+    } else {
+        // Collapse
+        DialogSetSize(g_dnc_dialog, 300, 50);
+        DialogControlSetVisible(g_dnc_lblTitle, PlayerGroupAll(), true); // Keep title visible? Or hide? Let's keep it.
+        DialogControlSetVisible(g_dnc_imgCurrent, PlayerGroupAll(), false);
+        DialogControlSetVisible(g_dnc_imgNext, PlayerGroupAll(), false);
+        DialogControlSetVisible(g_dnc_lblTimer, PlayerGroupAll(), false);
+        DialogControlSetPropertyAsText(g_dnc_btnMinimize, c_triggerControlPropertyText, PlayerGroupAll(), StringToText("+"));
+        g_dnc_isCollapsed = true;
+    }
+    return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+// Helper: Init UI
+//--------------------------------------------------------------------------------------------------
+void DayNightCycle_InitUI() {
+    // Create Dialog (Bottom Left, above minimap)
+    // Adjusted size to 300x110 and moved up to Y=420
+    g_dnc_dialog = DialogCreate(300, 110, c_anchorBottomLeft, 20, 420, false);
+    DialogSetVisible(g_dnc_dialog, PlayerGroupAll(), true);
+    DialogSetImageVisible(g_dnc_dialog, true); // Enable Background
+
+    // Title Label (Manual control instead of DialogSetTitle for better positioning)
+    g_dnc_lblTitle = DialogControlCreate(g_dnc_dialog, c_triggerControlTypeLabel);
+    DialogControlSetSize(g_dnc_lblTitle, PlayerGroupAll(), 200, 40);
+    DialogControlSetPosition(g_dnc_lblTitle, PlayerGroupAll(), c_anchorTop, 0, 5);
+    DialogControlSetPropertyAsText(g_dnc_lblTitle, c_triggerControlPropertyText, PlayerGroupAll(), StringToText("Phase"));
+
+    // Minimize Button (Top Right)
+    // Increased size to 40x40 to fix "text too tall" error
+    g_dnc_btnMinimize = DialogControlCreate(g_dnc_dialog, c_triggerControlTypeButton);
+    DialogControlSetSize(g_dnc_btnMinimize, PlayerGroupAll(), 40, 40);
+    DialogControlSetPosition(g_dnc_btnMinimize, PlayerGroupAll(), c_anchorTopRight, 5, 5);
+    DialogControlSetPropertyAsText(g_dnc_btnMinimize, c_triggerControlPropertyText, PlayerGroupAll(), StringToText("-"));
+
+    // Current Phase Icon (Left)
+    // Moved up to Y=45
+    g_dnc_imgCurrent = DialogControlCreate(g_dnc_dialog, c_triggerControlTypeImage);
+    DialogControlSetSize(g_dnc_imgCurrent, PlayerGroupAll(), 50, 50);
+    DialogControlSetPosition(g_dnc_imgCurrent, PlayerGroupAll(), c_anchorTopLeft, 40, 45);
+
+    // Timer Label (Center)
+    // Moved up to Y=50
+    g_dnc_lblTimer = DialogControlCreate(g_dnc_dialog, c_triggerControlTypeLabel);
+    DialogControlSetSize(g_dnc_lblTimer, PlayerGroupAll(), 60, 40);
+    DialogControlSetPosition(g_dnc_lblTimer, PlayerGroupAll(), c_anchorTop, 0, 50);
+    DialogControlSetPropertyAsText(g_dnc_lblTimer, c_triggerControlPropertyText, PlayerGroupAll(), StringToText("60"));
+    
+    // Next Phase Icon (Right, smaller)
+    // Moved up to Y=55
+    g_dnc_imgNext = DialogControlCreate(g_dnc_dialog, c_triggerControlTypeImage);
+    DialogControlSetSize(g_dnc_imgNext, PlayerGroupAll(), 30, 30);
+    DialogControlSetPosition(g_dnc_imgNext, PlayerGroupAll(), c_anchorTopRight, 40, 55);
+
+    // Register Trigger
+    g_dnc_trigMinimize = TriggerCreate("DayNightCycle_OnMinimize");
+    TriggerAddEventDialogControl(g_dnc_trigMinimize, c_playerAny, g_dnc_btnMinimize, c_triggerControlEventTypeClick);
+}
+
+//--------------------------------------------------------------------------------------------------
+// Public: Start the Cycle
+//--------------------------------------------------------------------------------------------------
+void DayNightCycle_Start() {
+    trigger t;
+    // Ensure we don't create UI twice
+    if (g_dnc_dialog == c_invalidDialogId) {
+        DayNightCycle_InitUI();
+        t = TriggerCreate("DayNightCycle_LoopTrigger");
+        TriggerExecute(t, false, false);
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+// Helper: Run Phase
+//--------------------------------------------------------------------------------------------------
+void DayNightCycle_RunPhase(string phaseName, string light, string currentIcon, string nextIcon) {
+    int i;
+    
+    // Update UI
+    DialogControlSetPropertyAsString(g_dnc_imgCurrent, c_triggerControlPropertyImage, PlayerGroupAll(), currentIcon);
+    DialogControlSetPropertyAsString(g_dnc_imgNext, c_triggerControlPropertyImage, PlayerGroupAll(), nextIcon);
+    
+    // Set Lighting
+    Debug_Log("Setting Lighting to: " + light);
+    GameSetLighting(light, c_transitionDuration);
+
+    // Timer Loop
+    i = FixedToInt(c_phaseDuration);
+    while (i > 0) {
+        DialogControlSetPropertyAsText(g_dnc_lblTimer, c_triggerControlPropertyText, PlayerGroupAll(), StringToText(IntToString(i)));
+        Wait(1.0, c_timeGame);
+        i = i - 1;
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+// Logic: The Loop Implementation
+//--------------------------------------------------------------------------------------------------
+void DayNightCycle_Loop() {
+    while (true) {
+        // Blue Phase -> Next is Green
+        DayNightCycle_RunPhase("Blue", c_lightBlue, c_iconBlue, c_iconGreen);
+
+        // Green Phase -> Next is Red
+        DayNightCycle_RunPhase("Green", c_lightGreen, c_iconGreen, c_iconRed);
+
+        // Red Phase -> Next is Blue
+        DayNightCycle_RunPhase("Red", c_lightRed, c_iconRed, c_iconBlue);
+    }
+}
