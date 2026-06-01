@@ -11,6 +11,7 @@
 
 // Constants
 const int c_rosterPoolMax    = 12; // draftable units per race (2 columns of 6)
+const int c_rosterBanTotal   = 4;  // total cross-bans (2 per player)
 const int c_rosterPickTotal  = 8;  // total snake picks (4 per player)
 const int c_rosterRosterSize = 6;  // 2 core + 4 drafted
 
@@ -27,11 +28,17 @@ string[7] g_roster_p1Units;
 string[7] g_roster_p2Units;
 
 // Draft tracking
+int       g_roster_phase       = 0;   // 0 = ban phase, 1 = pick phase
+int       g_roster_banIndex    = 0;
+int[5]    g_roster_banOrder;          // [1..4] who is doing the banning
+bool[5]   g_roster_banIsP1;           // [1..4] true = P1 is banning (from P2's pool)
+bool[13]  g_roster_p1Banned;          // units banned FROM P1's pool (by P2)
+bool[13]  g_roster_p2Banned;          // units banned FROM P2's pool (by P1)
 int       g_roster_pickIndex   = 0;
 int[9]    g_roster_pickOrder;
 bool[9]   g_roster_pickIsP1;
-bool[13]  g_roster_p1Picked;        // [1..12] which pool slots P1 has taken
-bool[13]  g_roster_p2Picked;        // [1..12] which pool slots P2 has taken
+bool[13]  g_roster_p1Picked;          // [1..12] which pool slots P1 has taken
+bool[13]  g_roster_p2Picked;          // [1..12] which pool slots P2 has taken
 int       g_roster_p1PickCount = 0;
 int       g_roster_p2PickCount = 0;
 
@@ -219,77 +226,124 @@ void RosterDraft_UpdateRosterPanel() {
 // Roster Draft: Update UI
 //--------------------------------------------------------------------------------------------------
 void RosterDraft_UpdateUI() {
-    int         currentPicker;
-    int         currentRace;
-    bool        pickerIsP1;
+    int         activePicker;
+    int         activeRace;
+    bool        activeIsP1;
     int         poolCount;
     int         i;
-    int         waiter;
     string      unitType;
-    bool        alreadyPicked;
+    bool        unavailable;
     string      titleText;
-    int         pickNum;
-    playergroup pickerGroup;
-    playergroup waiterGroup;
+    string      btnTxt;
+    playergroup activeGroup;
+    playergroup waitGroup;
+    int         waiter;
+    int         stepNum;
+    int         stepTotal;
 
-    pickNum       = g_roster_pickIndex + 1;
-    currentPicker = g_roster_pickOrder[pickNum];
-    pickerIsP1    = g_roster_pickIsP1[pickNum];
+    // ── Determine whose turn it is and which pool is shown ───────────────────
+    if (g_roster_phase == 0) {
+        // BAN PHASE: active player bans from opponent's pool
+        stepNum      = g_roster_banIndex + 1;
+        stepTotal    = c_rosterBanTotal;
+        activePicker = g_roster_banOrder[stepNum];
+        activeIsP1   = g_roster_banIsP1[stepNum];
+        // The pool shown is the OPPONENT's pool
+        if (activeIsP1) { activeRace = g_roster_p2Race; }
+        else            { activeRace = g_roster_p1Race; }
 
-    if (pickerIsP1) { currentRace = g_roster_p1Race; }
-    else            { currentRace = g_roster_p2Race; }
+        titleText = "<c val=\"FF4444\">BAN PHASE</c>"
+            + "   —   Ban  " + IntToString(stepNum) + "  of  " + IntToString(stepTotal)
+            + "      <c val=\"888888\">(then: Snake Pick  4 + 4)</c>";
+    } else {
+        // PICK PHASE: active player picks from their own pool
+        stepNum      = g_roster_pickIndex + 1;
+        stepTotal    = c_rosterPickTotal;
+        activePicker = g_roster_pickOrder[stepNum];
+        activeIsP1   = g_roster_pickIsP1[stepNum];
+        if (activeIsP1) { activeRace = g_roster_p1Race; }
+        else            { activeRace = g_roster_p2Race; }
 
-    poolCount   = GetRosterPoolCount(currentRace);
-    pickerGroup = PlayerGroupSingle(currentPicker);
+        titleText = "<c val=\"FFD700\">ROSTER DRAFT</c>"
+            + "   —   Pick  " + IntToString(stepNum) + "  of  " + IntToString(stepTotal);
+    }
 
-    // ── Title (same for all: pick progress) ──────────────────────────────────
-    titleText = "<c val=\"FFD700\">ROSTER DRAFT</c>"
-        + "   ·   Pick  " + IntToString(pickNum) + "  of  " + IntToString(c_rosterPickTotal);
+    poolCount   = GetRosterPoolCount(activeRace);
+    activeGroup = PlayerGroupSingle(activePicker);
+
+    // ── Title ─────────────────────────────────────────────────────────────────
     DialogControlSetPropertyAsText(g_roster_lblTitle, c_triggerControlPropertyText,
         PlayerGroupAll(), StringToText(titleText));
 
-    // ── Subtitle (per-player: YOUR TURN or waiting) ───────────────────────────
-    DialogControlSetPropertyAsText(g_roster_lblSubtitle, c_triggerControlPropertyText,
-        pickerGroup, StringToText(
-            "<c val=\"00FF88\">YOUR TURN  —  Select a unit to add to your roster</c>"));
+    // ── Subtitle: active player ───────────────────────────────────────────────
+    if (g_roster_phase == 0) {
+        DialogControlSetPropertyAsText(g_roster_lblSubtitle, c_triggerControlPropertyText,
+            activeGroup, StringToText(
+                "<c val=\"FF6666\">YOUR TURN  —  Ban a unit from your opponent's roster</c>"));
+    } else {
+        DialogControlSetPropertyAsText(g_roster_lblSubtitle, c_triggerControlPropertyText,
+            activeGroup, StringToText(
+                "<c val=\"00FF88\">YOUR TURN  —  Select a unit to add to your roster</c>"));
+    }
 
-    // ── Populate unit buttons for the current picker ──────────────────────────
+    // ── Pool buttons for the active player ───────────────────────────────────
     i = 1;
     while (i <= c_rosterPoolMax) {
         if (i <= poolCount) {
-            unitType = GetRosterPoolUnit(currentRace, i);
-            if (pickerIsP1) { alreadyPicked = g_roster_p1Picked[i]; }
-            else            { alreadyPicked = g_roster_p2Picked[i]; }
+            unitType = GetRosterPoolUnit(activeRace, i);
 
-            // 2-line button text: unit name (white) + role tag (grey)
+            // A unit is unavailable if it's been banned or already picked
+            if (g_roster_phase == 0) {
+                // Banning from opponent's pool — hide already-banned units
+                if (activeIsP1) { unavailable = g_roster_p2Banned[i]; }
+                else            { unavailable = g_roster_p1Banned[i]; }
+            } else {
+                // Picking from own pool — hide picked AND banned units
+                if (activeIsP1) { unavailable = g_roster_p1Picked[i] || g_roster_p1Banned[i]; }
+                else            { unavailable = g_roster_p2Picked[i] || g_roster_p2Banned[i]; }
+            }
+
+            if (g_roster_phase == 0) {
+                btnTxt = "<c val=\"FF8888\">" + RosterUnitDisplayName(unitType) + "</c>"
+                    + "\n<c val=\"664444\">BAN  ·  " + RosterUnitRole(unitType) + "</c>";
+            } else {
+                btnTxt = "<c val=\"FFFFFF\">" + RosterUnitDisplayName(unitType) + "</c>"
+                    + "\n<c val=\"666666\">" + RosterUnitRole(unitType) + "</c>";
+            }
+
             DialogControlSetPropertyAsText(g_roster_btnPool[i], c_triggerControlPropertyText,
-                pickerGroup, StringToText(
-                    "<c val=\"FFFFFF\">" + RosterUnitDisplayName(unitType) + "</c>"
-                    + "\n<c val=\"666666\">" + RosterUnitRole(unitType) + "</c>"));
-
-            DialogControlSetVisible(g_roster_btnPool[i], pickerGroup, !alreadyPicked);
+                activeGroup, StringToText(btnTxt));
+            DialogControlSetVisible(g_roster_btnPool[i], activeGroup, !unavailable);
         } else {
-            DialogControlSetVisible(g_roster_btnPool[i], pickerGroup, false);
+            DialogControlSetVisible(g_roster_btnPool[i], activeGroup, false);
         }
         i = i + 1;
     }
 
-    // ── Waiter: hide buttons, show waiting message ────────────────────────────
+    // ── Waiting player: hide buttons, show message ────────────────────────────
     if (g_roster_p1 != g_roster_p2) {
-        if (pickerIsP1) { waiter = g_roster_p2; }
+        if (activeIsP1) { waiter = g_roster_p2; }
         else            { waiter = g_roster_p1; }
-        waiterGroup = PlayerGroupSingle(waiter);
+        waitGroup = PlayerGroupSingle(waiter);
 
         i = 1;
         while (i <= c_rosterPoolMax) {
-            DialogControlSetVisible(g_roster_btnPool[i], waiterGroup, false);
+            DialogControlSetVisible(g_roster_btnPool[i], waitGroup, false);
             i = i + 1;
         }
-        DialogControlSetPropertyAsText(g_roster_lblSubtitle, c_triggerControlPropertyText,
-            waiterGroup, StringToText("<c val=\"888888\">Opponent is building their roster...</c>"));
+
+        if (g_roster_phase == 0) {
+            DialogControlSetPropertyAsText(g_roster_lblSubtitle, c_triggerControlPropertyText,
+                waitGroup, StringToText(
+                    "<c val=\"AA4444\">Opponent is banning a unit from your pool...</c>"));
+        } else {
+            DialogControlSetPropertyAsText(g_roster_lblSubtitle, c_triggerControlPropertyText,
+                waitGroup, StringToText(
+                    "<c val=\"888888\">Opponent is building their roster...</c>"));
+        }
     }
 
-    // ── Refresh roster panel for all players ─────────────────────────────────
+    // ── Refresh roster panel ─────────────────────────────────────────────────
     RosterDraft_UpdateRosterPanel();
 }
 
@@ -341,30 +395,20 @@ void RosterDraft_Finish() {
 bool RosterDraft_OnClicked(bool testConds, bool runActions) {
     int  control;
     int  player;
-    int  pickNum;
-    int  currentPicker;
-    bool pickerIsP1;
-    int  currentRace;
+    int  stepNum;
+    int  activePicker;
+    bool activeIsP1;
+    int  activeRace;
     int  poolIndex;
     int  btnIdx;
     string unitType;
 
-    control       = EventDialogControl();
-    player        = EventPlayer();
-    pickNum       = g_roster_pickIndex + 1;
-    currentPicker = g_roster_pickOrder[pickNum];
-
-    // Only the current picker may act
-    if (player != currentPicker) { return true; }
-
-    // Use pre-computed logical ownership — safe in solo mode where p1==p2
-    pickerIsP1 = g_roster_pickIsP1[pickNum];
-    if (pickerIsP1) { currentRace = g_roster_p1Race; }
-    else            { currentRace = g_roster_p2Race; }
+    control = EventDialogControl();
+    player  = EventPlayer();
 
     // Identify which pool button was clicked
     poolIndex = 0;
-    btnIdx = 1;
+    btnIdx    = 1;
     while (btnIdx <= c_rosterPoolMax) {
         if (control == g_roster_btnPool[btnIdx]) {
             poolIndex = btnIdx;
@@ -374,30 +418,78 @@ bool RosterDraft_OnClicked(bool testConds, bool runActions) {
     }
     if (poolIndex == 0) { return true; }
 
-    // Guard: unit already picked
-    if (pickerIsP1 && g_roster_p1Picked[poolIndex]) { return true; }
-    if (!pickerIsP1 && g_roster_p2Picked[poolIndex]) { return true; }
+    if (g_roster_phase == 0) {
+        // ── BAN PHASE ────────────────────────────────────────────────────────
+        stepNum      = g_roster_banIndex + 1;
+        activePicker = g_roster_banOrder[stepNum];
+        activeIsP1   = g_roster_banIsP1[stepNum];
 
-    // Record the pick
-    unitType = GetRosterPoolUnit(currentRace, poolIndex);
-    if (pickerIsP1) {
-        g_roster_p1Picked[poolIndex] = true;
-        g_roster_p1PickCount = g_roster_p1PickCount + 1;
-        g_roster_p1Units[2 + g_roster_p1PickCount] = unitType;
-        Debug_Log("P1 drafted: " + unitType + " (slot " + IntToString(2 + g_roster_p1PickCount) + ")");
-    } else {
-        g_roster_p2Picked[poolIndex] = true;
-        g_roster_p2PickCount = g_roster_p2PickCount + 1;
-        g_roster_p2Units[2 + g_roster_p2PickCount] = unitType;
-        Debug_Log("P2 drafted: " + unitType + " (slot " + IntToString(2 + g_roster_p2PickCount) + ")");
-    }
+        if (player != activePicker) { return true; }
 
-    g_roster_pickIndex = g_roster_pickIndex + 1;
+        // Active banner bans from the OPPONENT's pool
+        if (activeIsP1) {
+            // P1 banning from P2's pool
+            if (g_roster_p2Banned[poolIndex]) { return true; }
+            unitType = GetRosterPoolUnit(g_roster_p2Race, poolIndex);
+            g_roster_p2Banned[poolIndex] = true;
+            Debug_Log("P1 banned from P2 pool: " + unitType);
+        } else {
+            // P2 banning from P1's pool
+            if (g_roster_p1Banned[poolIndex]) { return true; }
+            unitType = GetRosterPoolUnit(g_roster_p1Race, poolIndex);
+            g_roster_p1Banned[poolIndex] = true;
+            Debug_Log("P2 banned from P1 pool: " + unitType);
+        }
 
-    if (g_roster_pickIndex >= c_rosterPickTotal) {
-        RosterDraft_Finish();
-    } else {
+        UIDisplayMessage(PlayerGroupAll(), c_messageAreaChat,
+            StringToText("<c val=\"FF4444\">BANNED: " + RosterUnitDisplayName(unitType) + "</c>"));
+
+        g_roster_banIndex = g_roster_banIndex + 1;
+        if (g_roster_banIndex >= c_rosterBanTotal) {
+            // Transition to pick phase
+            g_roster_phase     = 1;
+            g_roster_pickIndex = 0;
+            UIDisplayMessage(PlayerGroupAll(), c_messageAreaChat,
+                StringToText("<c val=\"FFD700\">Bans complete! Snake pick phase begins.</c>"));
+        }
         RosterDraft_UpdateUI();
+
+    } else {
+        // ── PICK PHASE ───────────────────────────────────────────────────────
+        stepNum      = g_roster_pickIndex + 1;
+        activePicker = g_roster_pickOrder[stepNum];
+        activeIsP1   = g_roster_pickIsP1[stepNum];
+
+        if (player != activePicker) { return true; }
+
+        if (activeIsP1) { activeRace = g_roster_p1Race; }
+        else            { activeRace = g_roster_p2Race; }
+
+        // Guard: already picked or banned
+        if (activeIsP1 && (g_roster_p1Picked[poolIndex] || g_roster_p1Banned[poolIndex])) { return true; }
+        if (!activeIsP1 && (g_roster_p2Picked[poolIndex] || g_roster_p2Banned[poolIndex])) { return true; }
+
+        unitType = GetRosterPoolUnit(activeRace, poolIndex);
+
+        if (activeIsP1) {
+            g_roster_p1Picked[poolIndex] = true;
+            g_roster_p1PickCount         = g_roster_p1PickCount + 1;
+            g_roster_p1Units[2 + g_roster_p1PickCount] = unitType;
+            Debug_Log("P1 drafted: " + unitType + " (slot " + IntToString(2 + g_roster_p1PickCount) + ")");
+        } else {
+            g_roster_p2Picked[poolIndex] = true;
+            g_roster_p2PickCount         = g_roster_p2PickCount + 1;
+            g_roster_p2Units[2 + g_roster_p2PickCount] = unitType;
+            Debug_Log("P2 drafted: " + unitType + " (slot " + IntToString(2 + g_roster_p2PickCount) + ")");
+        }
+
+        g_roster_pickIndex = g_roster_pickIndex + 1;
+
+        if (g_roster_pickIndex >= c_rosterPickTotal) {
+            RosterDraft_Finish();
+        } else {
+            RosterDraft_UpdateUI();
+        }
     }
 
     return true;
@@ -445,6 +537,8 @@ void RosterDraft_Start(trigger callback, int p1, int p2, int p1Race, int p2Race)
     g_roster_p2Race    = p2Race;
 
     // Reset state
+    g_roster_phase       = 0;
+    g_roster_banIndex    = 0;
     g_roster_pickIndex   = 0;
     g_roster_p1PickCount = 0;
     g_roster_p2PickCount = 0;
@@ -452,10 +546,19 @@ void RosterDraft_Start(trigger callback, int p1, int p2, int p1Race, int p2Race)
     while (i <= c_rosterPoolMax) {
         g_roster_p1Picked[i] = false;
         g_roster_p2Picked[i] = false;
+        g_roster_p1Banned[i] = false;
+        g_roster_p2Banned[i] = false;
         i = i + 1;
     }
 
-    // Snake order: P2, P1, P1, P2, P2, P1, P1, P2
+    // Ban order: P1 bans from P2's pool, P2 bans from P1's pool, repeat x2
+    // (banIsP1 = true means P1 is the one banning, targeting P2's pool)
+    g_roster_banOrder[1] = p1;  g_roster_banIsP1[1] = true;
+    g_roster_banOrder[2] = p2;  g_roster_banIsP1[2] = false;
+    g_roster_banOrder[3] = p1;  g_roster_banIsP1[3] = true;
+    g_roster_banOrder[4] = p2;  g_roster_banIsP1[4] = false;
+
+    // Snake pick order: P2, P1, P1, P2, P2, P1, P1, P2
     g_roster_pickOrder[1] = p2;  g_roster_pickIsP1[1] = false;
     g_roster_pickOrder[2] = p1;  g_roster_pickIsP1[2] = true;
     g_roster_pickOrder[3] = p1;  g_roster_pickIsP1[3] = true;
