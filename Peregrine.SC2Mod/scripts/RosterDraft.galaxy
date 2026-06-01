@@ -1,0 +1,572 @@
+//--------------------------------------------------------------------------------------------------
+// Roster Draft System
+//
+// Players snake-draft 4 specialized units each (2 core are auto-assigned).
+// Snake pick order: P2, P1, P1, P2, P2, P1, P1, P2  (1-2-2-1 format x2)
+// Each player picks from their own race's independent 12-unit pool.
+// Total roster per player: 2 Core + 4 Drafted = 6 units.
+//
+// Requires: RaceDraft.galaxy (for GetRaceConfigId, race constants)
+//--------------------------------------------------------------------------------------------------
+
+// Constants
+const int c_rosterPoolMax    = 12; // draftable units per race (2 columns of 6)
+const int c_rosterPickTotal  = 8;  // total snake picks (4 per player)
+const int c_rosterRosterSize = 6;  // 2 core + 4 drafted
+
+// State
+trigger g_roster_callback    = null;
+int     g_roster_p1;
+int     g_roster_p2;
+int     g_roster_p1Race;
+int     g_roster_p2Race;
+
+// Roster results — index 1..6 (1-2 = core units, 3-6 = drafted units)
+// Accessible globally for later systems (roster enforcement, etc.)
+string[7] g_roster_p1Units;
+string[7] g_roster_p2Units;
+
+// Draft tracking
+int       g_roster_pickIndex   = 0;
+int[9]    g_roster_pickOrder;
+bool[9]   g_roster_pickIsP1;
+bool[13]  g_roster_p1Picked;        // [1..12] which pool slots P1 has taken
+bool[13]  g_roster_p2Picked;        // [1..12] which pool slots P2 has taken
+int       g_roster_p1PickCount = 0;
+int       g_roster_p2PickCount = 0;
+
+// UI
+int       g_roster_dialog      = c_invalidDialogId;
+int       g_roster_lblTitle    = c_invalidDialogControlId;
+int       g_roster_lblSubtitle = c_invalidDialogControlId; // "YOUR TURN" or "waiting..."
+int[13]   g_roster_btnPool;                                // [1..12] unit pool buttons
+int[7]    g_roster_lblSlot;                                // [1..6] right-panel roster slots
+trigger   g_roster_trigger     = null;
+
+//--------------------------------------------------------------------------------------------------
+// Data Helpers
+//--------------------------------------------------------------------------------------------------
+
+string GetRosterCoreUnit(int race, int slot) {
+    string field;
+    if (slot == 1) { field = "CoreUnit1"; }
+    else           { field = "CoreUnit2"; }
+    return UserDataGetGameLink("PeregrineRosterConfig", GetRaceConfigId(race), field, 1);
+}
+
+// Pool fields are named Pool1..Pool8 (explicit, avoids CUser array-syntax uncertainty)
+string GetRosterPoolUnit(int race, int index) {
+    return UserDataGetGameLink("PeregrineRosterConfig", GetRaceConfigId(race),
+        "Pool" + IntToString(index), 1);
+}
+
+int GetRosterPoolCount(int race) {
+    return UserDataGetInt("PeregrineRosterConfig", GetRaceConfigId(race), "PoolCount", 1);
+}
+
+// Human-readable display name for a unit type string.
+string RosterUnitDisplayName(string unitType) {
+    // Terran
+    if (unitType == "Marine")       { return "Marine"; }
+    if (unitType == "Medivac")      { return "Medivac"; }
+    if (unitType == "Marauder")     { return "Marauder"; }
+    if (unitType == "Reaper")       { return "Reaper"; }
+    if (unitType == "Ghost")        { return "Ghost"; }
+    if (unitType == "Hellion")      { return "Hellion"; }
+    if (unitType == "SiegeTank")    { return "Siege Tank"; }
+    if (unitType == "Thor")         { return "Thor"; }
+    if (unitType == "VikingFighter"){ return "Viking"; }
+    if (unitType == "Banshee")      { return "Banshee"; }
+    if (unitType == "HellionTank")  { return "Hellbat"; }
+    if (unitType == "Cyclone")      { return "Cyclone"; }
+    if (unitType == "Liberator")    { return "Liberator"; }
+    if (unitType == "Raven")        { return "Raven"; }
+    // Protoss
+    if (unitType == "Stalker")      { return "Stalker"; }
+    if (unitType == "Observer")     { return "Observer"; }
+    if (unitType == "Zealot")       { return "Zealot"; }
+    if (unitType == "Sentry")       { return "Sentry"; }
+    if (unitType == "Immortal")     { return "Immortal"; }
+    if (unitType == "Colossus")     { return "Colossus"; }
+    if (unitType == "HighTemplar")  { return "High Templar"; }
+    if (unitType == "DarkTemplar")  { return "Dark Templar"; }
+    if (unitType == "VoidRay")      { return "Void Ray"; }
+    if (unitType == "Phoenix")      { return "Phoenix"; }
+    if (unitType == "Adept")        { return "Adept"; }
+    if (unitType == "Disruptor")    { return "Disruptor"; }
+    if (unitType == "Carrier")      { return "Carrier"; }
+    if (unitType == "Oracle")       { return "Oracle"; }
+    // Zerg
+    if (unitType == "Zergling")     { return "Zergling"; }
+    if (unitType == "Queen")        { return "Queen"; }
+    if (unitType == "Roach")        { return "Roach"; }
+    if (unitType == "Hydralisk")    { return "Hydralisk"; }
+    if (unitType == "Infestor")     { return "Infestor"; }
+    if (unitType == "Ultralisk")    { return "Ultralisk"; }
+    if (unitType == "BroodLord")    { return "Brood Lord"; }
+    if (unitType == "Mutalisk")     { return "Mutalisk"; }
+    if (unitType == "Corruptor")    { return "Corruptor"; }
+    if (unitType == "LurkerMP")     { return "Lurker"; }
+    if (unitType == "Ravager")      { return "Ravager"; }
+    if (unitType == "SwarmHost")    { return "Swarm Host"; }
+    if (unitType == "Viper")        { return "Viper"; }
+    if (unitType == "Baneling")     { return "Baneling"; }
+    return unitType;
+}
+
+// Short role/archetype tag shown on the second line of each unit button.
+string RosterUnitRole(string unitType) {
+    // Terran
+    if (unitType == "Marine")       { return "Core  ·  Infantry"; }
+    if (unitType == "Medivac")      { return "Core  ·  Healer"; }
+    if (unitType == "Marauder")     { return "Anti-Armor  ·  Slow"; }
+    if (unitType == "Reaper")       { return "Scout  ·  Raider"; }
+    if (unitType == "Ghost")        { return "Sniper  ·  EMP"; }
+    if (unitType == "Hellion")      { return "AoE  ·  Harassment"; }
+    if (unitType == "SiegeTank")    { return "Siege  ·  Artillery"; }
+    if (unitType == "Thor")         { return "Heavy Assault  ·  AA"; }
+    if (unitType == "VikingFighter"){ return "Air Superiority"; }
+    if (unitType == "Banshee")      { return "Cloaked Strike"; }
+    if (unitType == "HellionTank")  { return "AoE Brawler"; }
+    if (unitType == "Cyclone")      { return "Lock-On  ·  Skirmisher"; }
+    if (unitType == "Liberator")    { return "Zone Control  ·  Air"; }
+    if (unitType == "Raven")        { return "Tech Support  ·  Turret"; }
+    // Protoss
+    if (unitType == "Stalker")      { return "Core  ·  Blink"; }
+    if (unitType == "Observer")     { return "Core  ·  Detector"; }
+    if (unitType == "Zealot")       { return "Frontline  ·  Charge"; }
+    if (unitType == "Sentry")       { return "Force Field  ·  Support"; }
+    if (unitType == "Immortal")     { return "Hardened Shield  ·  AA"; }
+    if (unitType == "Colossus")     { return "AoE  ·  Siege"; }
+    if (unitType == "HighTemplar")  { return "Psionic Storm"; }
+    if (unitType == "DarkTemplar")  { return "Permanent Cloak"; }
+    if (unitType == "VoidRay")      { return "Prismatic Beam  ·  Air"; }
+    if (unitType == "Phoenix")      { return "Air  ·  Graviton Beam"; }
+    if (unitType == "Adept")        { return "Psionic Transfer"; }
+    if (unitType == "Disruptor")    { return "Nova Burst"; }
+    if (unitType == "Carrier")      { return "Interceptor Swarm  ·  Air"; }
+    if (unitType == "Oracle")       { return "Revelation  ·  Stasis"; }
+    // Zerg
+    if (unitType == "Zergling")     { return "Core  ·  Rush"; }
+    if (unitType == "Queen")        { return "Core  ·  Transfuse"; }
+    if (unitType == "Roach")        { return "Regen  ·  Tank"; }
+    if (unitType == "Hydralisk")    { return "Ranged Swarm"; }
+    if (unitType == "Infestor")     { return "Neural Parasite  ·  CC"; }
+    if (unitType == "Ultralisk")    { return "Rampage  ·  Heavy"; }
+    if (unitType == "BroodLord")    { return "Broodling Rain  ·  Siege"; }
+    if (unitType == "Mutalisk")     { return "Harassment  ·  Bounce"; }
+    if (unitType == "Corruptor")    { return "Anti-Massive  ·  Air"; }
+    if (unitType == "LurkerMP")     { return "Spine Burst  ·  Siege"; }
+    if (unitType == "Ravager")      { return "Corrosive Bile"; }
+    if (unitType == "SwarmHost")    { return "Locust Wave"; }
+    if (unitType == "Viper")        { return "Blinding Cloud  ·  CC"; }
+    if (unitType == "Baneling")     { return "Explosive  ·  Splash"; }
+    return "";
+}
+
+//--------------------------------------------------------------------------------------------------
+// Roster Draft: Roster Panel (right side — YOUR ROSTER)
+// Updates each player's 6 roster slot labels with their current picks.
+// Called at init and after every pick so both players always see their roster live.
+//--------------------------------------------------------------------------------------------------
+void RosterDraft_UpdateRosterPanel() {
+    int         i;
+    string      txt;
+    playergroup p1Group;
+    playergroup p2Group;
+
+    p1Group = PlayerGroupSingle(g_roster_p1);
+    p2Group = PlayerGroupSingle(g_roster_p2);
+
+    i = 1;
+    while (i <= c_rosterRosterSize) {
+        // P1 view
+        if (g_roster_p1Units[i] != "") {
+            if (i <= 2) {
+                txt = "<c val=\"888888\">  [Core]  " + RosterUnitDisplayName(g_roster_p1Units[i]) + "</c>";
+            } else {
+                txt = "<c val=\"00FF88\">  " + IntToString(i - 2) + ".  "
+                    + RosterUnitDisplayName(g_roster_p1Units[i]) + "</c>";
+            }
+        } else {
+            if (i <= 2) { txt = "<c val=\"444444\">  [Core]  loading...</c>"; }
+            else        { txt = "<c val=\"333333\">  " + IntToString(i - 2) + ".  — not yet drafted —</c>"; }
+        }
+        DialogControlSetPropertyAsText(g_roster_lblSlot[i], c_triggerControlPropertyText,
+            p1Group, StringToText(txt));
+
+        // P2 view (only set if a separate player)
+        if (g_roster_p1 != g_roster_p2) {
+            if (g_roster_p2Units[i] != "") {
+                if (i <= 2) {
+                    txt = "<c val=\"888888\">  [Core]  " + RosterUnitDisplayName(g_roster_p2Units[i]) + "</c>";
+                } else {
+                    txt = "<c val=\"00FF88\">  " + IntToString(i - 2) + ".  "
+                        + RosterUnitDisplayName(g_roster_p2Units[i]) + "</c>";
+                }
+            } else {
+                if (i <= 2) { txt = "<c val=\"444444\">  [Core]  loading...</c>"; }
+                else        { txt = "<c val=\"333333\">  " + IntToString(i - 2) + ".  — not yet drafted —</c>"; }
+            }
+            DialogControlSetPropertyAsText(g_roster_lblSlot[i], c_triggerControlPropertyText,
+                p2Group, StringToText(txt));
+        }
+        i = i + 1;
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+// Roster Draft: Update UI
+//--------------------------------------------------------------------------------------------------
+void RosterDraft_UpdateUI() {
+    int         currentPicker;
+    int         currentRace;
+    bool        pickerIsP1;
+    int         poolCount;
+    int         i;
+    int         waiter;
+    string      unitType;
+    bool        alreadyPicked;
+    string      titleText;
+    int         pickNum;
+    playergroup pickerGroup;
+    playergroup waiterGroup;
+
+    pickNum       = g_roster_pickIndex + 1;
+    currentPicker = g_roster_pickOrder[pickNum];
+    pickerIsP1    = g_roster_pickIsP1[pickNum];
+
+    if (pickerIsP1) { currentRace = g_roster_p1Race; }
+    else            { currentRace = g_roster_p2Race; }
+
+    poolCount   = GetRosterPoolCount(currentRace);
+    pickerGroup = PlayerGroupSingle(currentPicker);
+
+    // ── Title (same for all: pick progress) ──────────────────────────────────
+    titleText = "<c val=\"FFD700\">ROSTER DRAFT</c>"
+        + "   ·   Pick  " + IntToString(pickNum) + "  of  " + IntToString(c_rosterPickTotal);
+    DialogControlSetPropertyAsText(g_roster_lblTitle, c_triggerControlPropertyText,
+        PlayerGroupAll(), StringToText(titleText));
+
+    // ── Subtitle (per-player: YOUR TURN or waiting) ───────────────────────────
+    DialogControlSetPropertyAsText(g_roster_lblSubtitle, c_triggerControlPropertyText,
+        pickerGroup, StringToText(
+            "<c val=\"00FF88\">YOUR TURN  —  Select a unit to add to your roster</c>"));
+
+    // ── Populate unit buttons for the current picker ──────────────────────────
+    i = 1;
+    while (i <= c_rosterPoolMax) {
+        if (i <= poolCount) {
+            unitType = GetRosterPoolUnit(currentRace, i);
+            if (pickerIsP1) { alreadyPicked = g_roster_p1Picked[i]; }
+            else            { alreadyPicked = g_roster_p2Picked[i]; }
+
+            // 2-line button text: unit name (white) + role tag (grey)
+            DialogControlSetPropertyAsText(g_roster_btnPool[i], c_triggerControlPropertyText,
+                pickerGroup, StringToText(
+                    "<c val=\"FFFFFF\">" + RosterUnitDisplayName(unitType) + "</c>"
+                    + "\n<c val=\"666666\">" + RosterUnitRole(unitType) + "</c>"));
+
+            DialogControlSetVisible(g_roster_btnPool[i], pickerGroup, !alreadyPicked);
+        } else {
+            DialogControlSetVisible(g_roster_btnPool[i], pickerGroup, false);
+        }
+        i = i + 1;
+    }
+
+    // ── Waiter: hide buttons, show waiting message ────────────────────────────
+    if (g_roster_p1 != g_roster_p2) {
+        if (pickerIsP1) { waiter = g_roster_p2; }
+        else            { waiter = g_roster_p1; }
+        waiterGroup = PlayerGroupSingle(waiter);
+
+        i = 1;
+        while (i <= c_rosterPoolMax) {
+            DialogControlSetVisible(g_roster_btnPool[i], waiterGroup, false);
+            i = i + 1;
+        }
+        DialogControlSetPropertyAsText(g_roster_lblSubtitle, c_triggerControlPropertyText,
+            waiterGroup, StringToText("<c val=\"888888\">Opponent is building their roster...</c>"));
+    }
+
+    // ── Refresh roster panel for all players ─────────────────────────────────
+    RosterDraft_UpdateRosterPanel();
+}
+
+//--------------------------------------------------------------------------------------------------
+// Roster Draft: Finish
+//--------------------------------------------------------------------------------------------------
+void RosterDraft_Finish() {
+    string logMsg;
+    int i;
+
+    // Cleanup
+    if (g_roster_trigger != null) {
+        TriggerDestroy(g_roster_trigger);
+        g_roster_trigger = null;
+    }
+    DialogDestroy(g_roster_dialog);
+
+    // NOTE: Do NOT unpause here. AdvantageDraft_Finish() will unpause when all
+    // pre-game drafts are complete.
+
+    // Debug log
+    logMsg = "=== Roster Draft Complete ===\nP1 Roster:";
+    i = 1;
+    while (i <= c_rosterRosterSize) {
+        logMsg = logMsg + " " + g_roster_p1Units[i];
+        if (i < c_rosterRosterSize) { logMsg = logMsg + ","; }
+        i = i + 1;
+    }
+    logMsg = logMsg + "\nP2 Roster:";
+    i = 1;
+    while (i <= c_rosterRosterSize) {
+        logMsg = logMsg + " " + g_roster_p2Units[i];
+        if (i < c_rosterRosterSize) { logMsg = logMsg + ","; }
+        i = i + 1;
+    }
+    Debug_Log(logMsg);
+
+    UIDisplayMessage(PlayerGroupAll(), c_messageAreaChat,
+        StringToText("Roster Draft Complete! The game begins."));
+
+    if (g_roster_callback != null) {
+        TriggerExecute(g_roster_callback, false, false);
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+// Roster Draft: Button Click Handler
+//--------------------------------------------------------------------------------------------------
+bool RosterDraft_OnClicked(bool testConds, bool runActions) {
+    int  control;
+    int  player;
+    int  pickNum;
+    int  currentPicker;
+    bool pickerIsP1;
+    int  currentRace;
+    int  poolIndex;
+    int  btnIdx;
+    string unitType;
+
+    control       = EventDialogControl();
+    player        = EventPlayer();
+    pickNum       = g_roster_pickIndex + 1;
+    currentPicker = g_roster_pickOrder[pickNum];
+
+    // Only the current picker may act
+    if (player != currentPicker) { return true; }
+
+    // Use pre-computed logical ownership — safe in solo mode where p1==p2
+    pickerIsP1 = g_roster_pickIsP1[pickNum];
+    if (pickerIsP1) { currentRace = g_roster_p1Race; }
+    else            { currentRace = g_roster_p2Race; }
+
+    // Identify which pool button was clicked
+    poolIndex = 0;
+    btnIdx = 1;
+    while (btnIdx <= c_rosterPoolMax) {
+        if (control == g_roster_btnPool[btnIdx]) {
+            poolIndex = btnIdx;
+            break;
+        }
+        btnIdx = btnIdx + 1;
+    }
+    if (poolIndex == 0) { return true; }
+
+    // Guard: unit already picked
+    if (pickerIsP1 && g_roster_p1Picked[poolIndex]) { return true; }
+    if (!pickerIsP1 && g_roster_p2Picked[poolIndex]) { return true; }
+
+    // Record the pick
+    unitType = GetRosterPoolUnit(currentRace, poolIndex);
+    if (pickerIsP1) {
+        g_roster_p1Picked[poolIndex] = true;
+        g_roster_p1PickCount = g_roster_p1PickCount + 1;
+        g_roster_p1Units[2 + g_roster_p1PickCount] = unitType;
+        Debug_Log("P1 drafted: " + unitType + " (slot " + IntToString(2 + g_roster_p1PickCount) + ")");
+    } else {
+        g_roster_p2Picked[poolIndex] = true;
+        g_roster_p2PickCount = g_roster_p2PickCount + 1;
+        g_roster_p2Units[2 + g_roster_p2PickCount] = unitType;
+        Debug_Log("P2 drafted: " + unitType + " (slot " + IntToString(2 + g_roster_p2PickCount) + ")");
+    }
+
+    g_roster_pickIndex = g_roster_pickIndex + 1;
+
+    if (g_roster_pickIndex >= c_rosterPickTotal) {
+        RosterDraft_Finish();
+    } else {
+        RosterDraft_UpdateUI();
+    }
+
+    return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+// Roster Draft: Start
+//
+//   p1       — the banning player's decider (g_draft_p1 from RaceDraft)
+//   p2       — the picking player's decider (g_draft_p2 from RaceDraft)
+//   p1Race   — race of p1 (g_draft_p1Race)
+//   p2Race   — race of p2 (g_draft_p2Race)
+//
+// Dialog layout (860 × 560):
+//
+//   ┌──────────────────────────────────────────────────┬────────────────────┐
+//   │  ROSTER DRAFT  ·  Pick N of 8                   │                    │
+//   │  YOUR TURN / Opponent is drafting...            │                    │
+//   ├─ AVAILABLE UNITS ───────────────────────────────┼─ YOUR ROSTER ──────┤
+//   │ [Col A btn 1]   [Col B btn 7]                   │ [Core slot 1]      │
+//   │ [Col A btn 2]   [Col B btn 8]                   │ [Core slot 2]      │
+//   │ [Col A btn 3]   [Col B btn 9]                   │ ─ ─ ─ ─ ─ ─ ─ ─ ─ │
+//   │ [Col A btn 4]   [Col B btn 10]                  │ [Draft slot 1]     │
+//   │ [Col A btn 5]   [Col B btn 11]                  │ [Draft slot 2]     │
+//   │ [Col A btn 6]   [Col B btn 12]                  │ [Draft slot 3]     │
+//   │                                                 │ [Draft slot 4]     │
+//   └─────────────────────────────────────────────────┴────────────────────┘
+//
+// Anchor math (c_anchorTop = control centered horizontally at dialogCenter+xOffset):
+//   dialogCenter = 430  (dialog width 860)
+//   Col A  center=140 → xOffset=-290   (left=20,  width=238)
+//   Col B  center=392 → xOffset=-38    (left=273, width=238)
+//   Right  center=690 → xOffset=+260   (left=560, width=260)
+//--------------------------------------------------------------------------------------------------
+void RosterDraft_Start(trigger callback, int p1, int p2, int p1Race, int p2Race) {
+    int i;
+    int row;
+    int slotY;
+    int lblSection;
+
+    g_roster_callback  = callback;
+    g_roster_p1        = p1;
+    g_roster_p2        = p2;
+    g_roster_p1Race    = p1Race;
+    g_roster_p2Race    = p2Race;
+
+    // Reset state
+    g_roster_pickIndex   = 0;
+    g_roster_p1PickCount = 0;
+    g_roster_p2PickCount = 0;
+    i = 1;
+    while (i <= c_rosterPoolMax) {
+        g_roster_p1Picked[i] = false;
+        g_roster_p2Picked[i] = false;
+        i = i + 1;
+    }
+
+    // Snake order: P2, P1, P1, P2, P2, P1, P1, P2
+    g_roster_pickOrder[1] = p2;  g_roster_pickIsP1[1] = false;
+    g_roster_pickOrder[2] = p1;  g_roster_pickIsP1[2] = true;
+    g_roster_pickOrder[3] = p1;  g_roster_pickIsP1[3] = true;
+    g_roster_pickOrder[4] = p2;  g_roster_pickIsP1[4] = false;
+    g_roster_pickOrder[5] = p2;  g_roster_pickIsP1[5] = false;
+    g_roster_pickOrder[6] = p1;  g_roster_pickIsP1[6] = true;
+    g_roster_pickOrder[7] = p1;  g_roster_pickIsP1[7] = true;
+    g_roster_pickOrder[8] = p2;  g_roster_pickIsP1[8] = false;
+
+    // Auto-assign core units
+    g_roster_p1Units[1] = GetRosterCoreUnit(p1Race, 1);
+    g_roster_p1Units[2] = GetRosterCoreUnit(p1Race, 2);
+    g_roster_p2Units[1] = GetRosterCoreUnit(p2Race, 1);
+    g_roster_p2Units[2] = GetRosterCoreUnit(p2Race, 2);
+    // Initialize drafted slots as empty
+    i = 3;
+    while (i <= c_rosterRosterSize) {
+        g_roster_p1Units[i] = "";
+        g_roster_p2Units[i] = "";
+        i = i + 1;
+    }
+
+    Debug_Log("RosterDraft: P1=" + IntToString(p1) + " race=" + GetRaceConfigId(p1Race)
+        + " core=[" + g_roster_p1Units[1] + "," + g_roster_p1Units[2] + "]"
+        + " poolCount=" + IntToString(GetRosterPoolCount(p1Race)));
+    Debug_Log("RosterDraft: P2=" + IntToString(p2) + " race=" + GetRaceConfigId(p2Race)
+        + " core=[" + g_roster_p2Units[1] + "," + g_roster_p2Units[2] + "]"
+        + " poolCount=" + IntToString(GetRosterPoolCount(p2Race)));
+
+    // ── Build Dialog: 860 × 560 ───────────────────────────────────────────────
+    g_roster_dialog = DialogCreate(860, 560, c_anchorCenter, 0, 0, true);
+    DialogSetVisible(g_roster_dialog, PlayerGroupAll(), true);
+
+    // Title label — centered, top
+    g_roster_lblTitle = DialogControlCreate(g_roster_dialog, c_triggerControlTypeLabel);
+    DialogControlSetSize(g_roster_lblTitle, PlayerGroupAll(), 820, 28);
+    DialogControlSetPosition(g_roster_lblTitle, PlayerGroupAll(), c_anchorTop, 0, 10);
+
+    // Subtitle label — centered, below title (YOUR TURN / waiting)
+    g_roster_lblSubtitle = DialogControlCreate(g_roster_dialog, c_triggerControlTypeLabel);
+    DialogControlSetSize(g_roster_lblSubtitle, PlayerGroupAll(), 820, 20);
+    DialogControlSetPosition(g_roster_lblSubtitle, PlayerGroupAll(), c_anchorTop, 0, 42);
+
+    // Section header: AVAILABLE UNITS (over left panel)
+    // center=270, xOffset=270-430=-160
+    lblSection = DialogControlCreate(g_roster_dialog, c_triggerControlTypeLabel);
+    DialogControlSetSize(lblSection, PlayerGroupAll(), 500, 14);
+    DialogControlSetPosition(lblSection, PlayerGroupAll(), c_anchorTop, -160, 68);
+    DialogControlSetPropertyAsText(lblSection, c_triggerControlPropertyText,
+        PlayerGroupAll(),
+        StringToText("<c val=\"555555\">AVAILABLE UNITS ──────────────────────────────────────────────────</c>"));
+
+    // Section header: YOUR ROSTER (over right panel)
+    // center=690, xOffset=690-430=+260
+    lblSection = DialogControlCreate(g_roster_dialog, c_triggerControlTypeLabel);
+    DialogControlSetSize(lblSection, PlayerGroupAll(), 260, 14);
+    DialogControlSetPosition(lblSection, PlayerGroupAll(), c_anchorTop, +260, 68);
+    DialogControlSetPropertyAsText(lblSection, c_triggerControlPropertyText,
+        PlayerGroupAll(),
+        StringToText("<c val=\"555555\">YOUR ROSTER ─────────────────</c>"));
+
+    // ── Unit pool buttons [1..12] — two columns of 6 ─────────────────────────
+    // Button size: 238 × 56  (2 lines: name + role)
+    // Col A (1..6):  xOffset=-290  →  left≈20
+    // Col B (7..12): xOffset=-38   →  left≈273
+    // Row step: 64px, starting at y=88
+    i = 1;
+    while (i <= c_rosterPoolMax) {
+        g_roster_btnPool[i] = DialogControlCreate(g_roster_dialog, c_triggerControlTypeButton);
+        DialogControlSetSize(g_roster_btnPool[i], PlayerGroupAll(), 238, 56);
+        if (i <= 6) {
+            row = i - 1;
+            DialogControlSetPosition(g_roster_btnPool[i], PlayerGroupAll(),
+                c_anchorTop, -290, 88 + row * 64);
+        } else {
+            row = i - 7;
+            DialogControlSetPosition(g_roster_btnPool[i], PlayerGroupAll(),
+                c_anchorTop, -38, 88 + row * 64);
+        }
+        // Hidden initially; UpdateUI makes the correct set visible per picker
+        DialogControlSetVisible(g_roster_btnPool[i], PlayerGroupAll(), false);
+        i = i + 1;
+    }
+
+    // ── Roster slot labels [1..6] — right panel ───────────────────────────────
+    // Each 260 × 52, xOffset=+260  →  left≈560
+    // Slots 1-2 (Core):   y=88, 152   (step 64)
+    // Slots 3-6 (Drafted): y=232, 296, 360, 424  (step 64, with 16px extra gap after core)
+    i = 1;
+    while (i <= c_rosterRosterSize) {
+        g_roster_lblSlot[i] = DialogControlCreate(g_roster_dialog, c_triggerControlTypeLabel);
+        DialogControlSetSize(g_roster_lblSlot[i], PlayerGroupAll(), 260, 52);
+        if (i <= 2) {
+            slotY = 88 + (i - 1) * 64;
+        } else {
+            slotY = 232 + (i - 3) * 64;
+        }
+        DialogControlSetPosition(g_roster_lblSlot[i], PlayerGroupAll(),
+            c_anchorTop, +260, slotY);
+        i = i + 1;
+    }
+
+    // Register click trigger for all 12 buttons
+    g_roster_trigger = TriggerCreate("RosterDraft_OnClicked");
+    i = 1;
+    while (i <= c_rosterPoolMax) {
+        TriggerAddEventDialogControl(g_roster_trigger, c_playerAny,
+            g_roster_btnPool[i], c_triggerControlEventTypeClick);
+        i = i + 1;
+    }
+
+    // Initial render
+    RosterDraft_UpdateUI();
+}

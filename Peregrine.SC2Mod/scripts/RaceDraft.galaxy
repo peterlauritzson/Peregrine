@@ -18,6 +18,10 @@ int g_draft_phase = 0; // 0 = Ban, 1 = Pick
 trigger g_draft_trigger;
 trigger g_draft_callback = null;
 
+// Exposed results — set at finish, read by subsequent draft phases
+int g_draft_p1Race = 0; // race of g_draft_p1 (the banning player)
+int g_draft_p2Race = 0; // race of g_draft_p2 (the picking player)
+
 // UI
 int g_draft_dialog = c_invalidDialogId;
 int g_draft_label = c_invalidDialogControlId;
@@ -201,14 +205,18 @@ void RaceDraft_Finish(int pickedRace) {
 
     SetTeamRace(g_draft_team1, t1Race);
     SetTeamRace(g_draft_team2, t2Race);
-    
+
+    // Store race per decider (p1 = banner, p2 = picker)
+    g_draft_p1Race = p1Race;
+    g_draft_p2Race = pickedRace;
+
     // Cleanup UI
     DialogDestroy(g_draft_dialog);
-    
-    // Unpause
-    GameSetMissionTimePaused(false);
 
-    // Run Callback (Game Start)
+    // NOTE: Do NOT unpause here. The chained draft phases manage pausing.
+    // AdvantageDraft_Finish() — the final phase — calls GameSetMissionTimePaused(false).
+
+    // Run Callback
     if (g_draft_callback != null) {
         TriggerExecute(g_draft_callback, false, false);
     }

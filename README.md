@@ -58,7 +58,24 @@ The map itself is a weapon. The physics and geometry of Peregrine naturally dest
 
 ---
 
-## 🎮 How to Play
+## � The Tidal Cycle
+Peregrine features a persistent **3-phase Tidal Cycle** that pulses throughout the entire match, shifting the battlefield's ambient conditions and empowering a different faction each phase. The cycle is always visible in the bottom-left HUD — showing the current phase, a countdown timer, and an icon of the incoming phase.
+
+The three phases rotate continuously in order:
+
+| Phase | Color | Favored Faction | Example Buff |
+|---|---|---|---|
+| **The Khala Surge** | 🟡 Yellow | Protoss | Psionic resonance strengthens shields — all Protoss units regenerate a portion of their shields passively, even in combat. |
+| **The Swarm Tide** | 🔴 Red | Zerg | Bio-spores saturate the air — Zerg units gain bonus movement speed and their regeneration rate is doubled. |
+| **The Iron Hour** | 🔵 Blue | Terran | The electromagnetic atmosphere supercharges munitions — Terran units deal bonus damage and repair costs are reduced. |
+
+> **Note:** These are illustrative examples of what each phase *could* do. Exact buffs are still being designed and balanced.
+
+No faction is permanently dominant. Smart players will time their pushes to coincide with their own phase, or bait enemies into over-committing during an unfavorable one.
+
+---
+
+## �🎮 How to Play
 Peregrine is an Extension Mod, meaning it can be played on any standard Melee Map.
 
 1.  Open StarCraft II.

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Catalog>
+
+    <!-- =====================================================================
+         PEREGRINE: IN-ZONE VALIDATOR
+         Returns true when the target unit currently has the PeregrineInZone
+         marker behavior (count > 0).  Used by any system that needs to
+         confirm a unit is inside an active zone structure's radius.
+    ===================================================================== -->
+    <CValidatorUnitCompareBehaviorCount id="PeregrineIsInZone">
+        <WhichUnit Value="Caster"/>
+        <Behavior value="PeregrineInZone"/>
+        <Compare value="GT"/>
+        <Value value="0"/>
+    </CValidatorUnitCompareBehaviorCount>
+
+</Catalog>

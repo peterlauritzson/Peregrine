@@ -1,16 +1,7 @@
-//--------------------------------------------------------------------------------------------------
-// Peregrine Logic
-//--------------------------------------------------------------------------------------------------
-
-include "scripts/Debug"
-include "scripts/RaceDraft"
-include "scripts/RosterDraft"
-include "scripts/AdvantageDraft"
-include "scripts/DayNightCycle"
-
+﻿// =============================================================================
+// ZoneAdvantage.galaxy
 // =============================================================================
-// Zone Advantage (inlined — separate file has encoding issues with SC2 engine)
-// =============================================================================
+
 int    g_za_p1;
 int    g_za_p2;
 string g_za_aura1;
@@ -81,70 +72,12 @@ void ZoneAdvantage_Init(int p1, int p2, int adv1, int adv2, int race1, int race2
     g_za_aura2 = ZoneAdvantage_AuraBehavior(adv2);
     g_za_race1 = RaceName(race1);
     g_za_race2 = RaceName(race2);
+
     ZoneAdvantage_ScanPlayer(p1, g_za_race1, g_za_aura1);
     if (p2 != p1) {
         ZoneAdvantage_ScanPlayer(p2, g_za_race2, g_za_aura2);
     }
+
     t = TriggerCreate("ZoneAdvantage_LoopTrigger");
     TriggerExecute(t, false, false);
-}
-// =============================================================================
-
-//--------------------------------------------------------------------------------------------------
-// Callback: Run when ALL drafts are complete — game actually starts here
-//--------------------------------------------------------------------------------------------------
-bool Peregrine_OnAdvantageFinished(bool testConds, bool runActions) {
-    // Activate zone advantage auras based on each player's draft choice.
-    // g_adv_result_p1/p2 are set by AdvantageDraft_Finish().
-    ZoneAdvantage_Init(
-        g_roster_p1,    g_roster_p2,
-        g_adv_result_p1, g_adv_result_p2,
-        g_roster_p1Race, g_roster_p2Race
-    );
-    DayNightCycle_Start();
-    return true;
-}
-
-//--------------------------------------------------------------------------------------------------
-// Callback: Run when the Roster Draft is complete — kick off the Advantage Draft
-//--------------------------------------------------------------------------------------------------
-bool Peregrine_OnRosterFinished(bool testConds, bool runActions) {
-    trigger advCallback;
-
-    advCallback = TriggerCreate("Peregrine_OnAdvantageFinished");
-
-    // Pass players and races from the roster draft globals (set by RaceDraft)
-    AdvantageDraft_Start(advCallback,
-        g_roster_p1, g_roster_p2,
-        g_roster_p1Race, g_roster_p2Race);
-
-    return true;
-}
-
-//--------------------------------------------------------------------------------------------------
-// Callback: Run when the Race Draft is complete — kick off the Roster Draft
-//--------------------------------------------------------------------------------------------------
-bool Peregrine_OnDraftFinished(bool testConds, bool runActions) {
-    trigger rosterCallback;
-
-    rosterCallback = TriggerCreate("Peregrine_OnRosterFinished");
-
-    // Pass the two decider players and their assigned races from the race draft
-    RosterDraft_Start(rosterCallback,
-        g_draft_p1, g_draft_p2,
-        g_draft_p1Race, g_draft_p2Race);
-
-    return true;
-}
-
-void Peregrine_Init() {
-    trigger t;
-    Debug_Init();
-    UIDisplayMessage(PlayerGroupAll(), c_messageAreaChat, StringToText("Peregrine Logic Loaded Successfully!"));
-
-    // Create the callback trigger
-    t = TriggerCreate("Peregrine_OnDraftFinished");
-
-    // Start the draft chain: Race → Roster → Advantage → Game
-    RaceDraft_Start(t);
 }
