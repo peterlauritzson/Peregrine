@@ -54,11 +54,9 @@ trigger   g_roster_trigger     = null;
 // Data Helpers
 //--------------------------------------------------------------------------------------------------
 
+// Delegates to GetCoreUnit in RaceDraft.galaxy — the single source of truth.
 string GetRosterCoreUnit(int race, int slot) {
-    string field;
-    if (slot == 1) { field = "CoreUnit1"; }
-    else           { field = "CoreUnit2"; }
-    return UserDataGetGameLink("PeregrineRosterConfig", GetRaceConfigId(race), field, 1);
+    return GetCoreUnit(race, slot);
 }
 
 // Pool fields are named Pool1..Pool8 (explicit, avoids CUser array-syntax uncertainty)
@@ -301,6 +299,15 @@ void RosterDraft_UpdateUI() {
                 // Picking from own pool — hide picked AND banned units
                 if (activeIsP1) { unavailable = g_roster_p1Picked[i] || g_roster_p1Banned[i]; }
                 else            { unavailable = g_roster_p2Picked[i] || g_roster_p2Banned[i]; }
+            }
+
+            // Core units are auto-granted and must never appear in the ban or pick pool.
+            // This filter makes the pool self-consistent with whatever CoreUnit1/2 are
+            // defined as in GameData.xml — no manual pool maintenance required.
+            if (!unavailable) {
+                if (unitType == GetCoreUnit(activeRace, 1) || unitType == GetCoreUnit(activeRace, 2)) {
+                    unavailable = true;
+                }
             }
 
             if (g_roster_phase == 0) {

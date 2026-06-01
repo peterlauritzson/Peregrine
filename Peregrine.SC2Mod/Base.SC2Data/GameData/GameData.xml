@@ -40,8 +40,13 @@
         </Instances>
     </CUser>
 
-    <!-- Roster Draft: unit pools per race. CoreUnit1/2 are always granted.       -->
-    <!-- Pool1..Pool8 are the draftable options; players snake-draft 4 each.      -->
+    <!-- ════════════════════════════════════════════════════════════════════════  -->
+    <!-- CORE UNIT DEFINITIONS  (edit here — everything else updates automatically) -->
+    <!--   CoreUnit1 / CoreUnit2  are always granted to the player at game start.   -->
+    <!--   They are excluded from banning and picking in the Roster Draft.          -->
+    <!--   The draft pool (Pool1..Pool12) is filtered at runtime, so any unit you   -->
+    <!--   promote to a core slot automatically disappears from the draftable pool. -->
+    <!-- ════════════════════════════════════════════════════════════════════════  -->
     <CUser id="PeregrineRosterConfig">
         <Fields Id="CoreUnit1" Type="GameLink" GameLinkType="Unit"/>
         <Fields Id="CoreUnit2" Type="GameLink" GameLinkType="Unit"/>

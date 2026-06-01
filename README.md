@@ -17,7 +17,8 @@ You don't just blindly pick your race. Factions are drafted:
 ### 2. The Roster Draft (Deckbuilding)
 You do not have access to the full StarCraft II tech tree. Instead, you build a custom 6-unit "deck" for the match.
 *   **The Core:** Each player automatically receives a foundational "Core" of 2 essential units ensuring basic anti-ground and anti-air capabilities (e.g., Terran always gets Marines and Medivacs).
-*   **The Snake Draft:** Players alternate drafting 4 specialized units from their faction's roster in a 1-2-2-1 snake format, allowing for active counter-picking. (If your opponent drafts heavy armor early, you can immediately pivot to armor-piercing or high-mobility units).
+*   **The Ban Phase:** Before picking begins, players alternate banning 2 units each from their *opponent's* pool (4 bans total). You're not weakening yourself — you're denying the enemy their most dangerous tools.
+*   **The Snake Draft:** After bans, players alternate drafting 4 specialized units from their own faction's remaining roster in a 1-2-2-1 snake format. (If your opponent drafted heavy armor early, you can immediately pivot to armor-piercing or high-mobility units).
 
 ### 3. The Advantage Draft
 Finally, players draft their "Zone Buff." Map control in Peregrine projects a faction-specific zone (Zerg Creep, Protoss Power Fields, Terran Sensor Networks). The Advantage you draft is a game-changing mechanical buff your units receive *only* when fighting inside your territory. 
