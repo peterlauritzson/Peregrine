@@ -1,0 +1,433 @@
+//--------------------------------------------------------------------------------------------------
+// Strategic HUD
+//
+// Persistent in-game strategic interface. Three panels visible throughout the match:
+//
+//   1. Status Strip  (top-left)  - current stance, target zone, retreat threshold at a glance
+//   2. Command Panel (top-right) - all strategic buttons: stance, orders, economy
+//   3. Economy Info  (right)     - base count and worker saturation readout
+//
+// UI DRAFT -- all buttons update state labels and fire a chat confirmation message.
+// No gameplay automation is wired yet. This is intentional.
+//
+// Layout:
+//   Status strip   : c_anchorTopLeft,  x=190, y=36, w=650, h=24
+//   Command panel  : c_anchorTopRight, x=5,   y=45, w=185, h=460
+//   Economy panel  : c_anchorTopRight, x=5,   y=510, w=185, h=38
+//--------------------------------------------------------------------------------------------------
+
+// Stance constants
+const int c_stance_None       = 0;
+const int c_stance_Aggressive = 1;
+const int c_stance_Defensive  = 2;
+const int c_stance_Flanking   = 3;
+const int c_stance_Hold       = 4;
+
+// Retreat threshold constants
+const int c_threshold_Never = 0;
+const int c_threshold_Low   = 1; // ~20% HP
+const int c_threshold_Mid   = 2; // ~40% HP
+const int c_threshold_High  = 3; // ~60% HP
+
+// Per-player state (indexed by player number 1-15)
+int[16]    g_hud_stance;
+int[16]    g_hud_threshold;
+string[16] g_hud_target;
+
+// Player refs
+int g_hud_p1 = 0;
+int g_hud_p2 = 0;
+
+// Status Strip
+int g_hud_statusDialog = c_invalidDialogId;
+int g_hud_lblStatus    = c_invalidDialogControlId;
+
+// Command Panel
+int g_hud_panelDialog    = c_invalidDialogId;
+// Stance section
+int g_hud_btnAggressive  = c_invalidDialogControlId;
+int g_hud_btnDefensive   = c_invalidDialogControlId;
+int g_hud_btnFlanking    = c_invalidDialogControlId;
+int g_hud_btnHold        = c_invalidDialogControlId;
+// Orders section
+int g_hud_btnAttackZone  = c_invalidDialogControlId;
+int g_hud_btnReinforce   = c_invalidDialogControlId;
+int g_hud_btnFallBack    = c_invalidDialogControlId;
+int g_hud_btnThreshold   = c_invalidDialogControlId; // cycles retreat threshold
+// Economy section
+int g_hud_btnExpand      = c_invalidDialogControlId;
+int g_hud_btnArmyComp    = c_invalidDialogControlId;
+int g_hud_btnTechUp      = c_invalidDialogControlId;
+
+// Economy Info Panel
+int g_hud_ecoDialog = c_invalidDialogId;
+int g_hud_lblEco    = c_invalidDialogControlId;
+
+// Click trigger
+trigger g_hud_trigClick = null;
+
+//--------------------------------------------------------------------------------------------------
+// Helper: Stance display name
+//--------------------------------------------------------------------------------------------------
+string HUD_StanceName(int stance) {
+    if (stance == c_stance_Aggressive) { return "AGGRESSIVE"; }
+    if (stance == c_stance_Defensive)  { return "DEFENSIVE"; }
+    if (stance == c_stance_Flanking)   { return "FLANKING"; }
+    if (stance == c_stance_Hold)       { return "HOLD LINE"; }
+    return "-";
+}
+
+//--------------------------------------------------------------------------------------------------
+// Helper: Threshold display name
+//--------------------------------------------------------------------------------------------------
+string HUD_ThresholdName(int t) {
+    if (t == c_threshold_Never) { return "Never"; }
+    if (t == c_threshold_Low)   { return "20%"; }
+    if (t == c_threshold_Mid)   { return "40%"; }
+    if (t == c_threshold_High)  { return "60%"; }
+    return "-";
+}
+
+//--------------------------------------------------------------------------------------------------
+// Update: Refresh the status strip label for one player
+//--------------------------------------------------------------------------------------------------
+void StrategicHUD_UpdateStatus(int player) {
+    string statusLine;
+    statusLine = "STANCE: " + HUD_StanceName(g_hud_stance[player]);
+    statusLine = statusLine + "     TARGET: " + g_hud_target[player];
+    statusLine = statusLine + "     RETREAT: " + HUD_ThresholdName(g_hud_threshold[player]);
+    DialogControlSetPropertyAsText(
+        g_hud_lblStatus,
+        c_triggerControlPropertyText,
+        PlayerGroupSingle(player),
+        StringToText("<c val=\"CCCCCC\">" + statusLine + "</c>")
+    );
+}
+
+//--------------------------------------------------------------------------------------------------
+// Update: Refresh stance button labels for one player
+// The active stance gets a ">" prefix; all others are plain.
+//--------------------------------------------------------------------------------------------------
+void StrategicHUD_UpdateStanceButtons(int player) {
+    playergroup pg;
+    int s;
+    string mark;
+    string none;
+    pg   = PlayerGroupSingle(player);
+    s    = g_hud_stance[player];
+    mark = "> ";
+    none = "  ";
+
+    if (s == c_stance_Aggressive) {
+        DialogControlSetPropertyAsText(g_hud_btnAggressive, c_triggerControlPropertyText, pg, StringToText(mark + "Aggressive"));
+    } else {
+        DialogControlSetPropertyAsText(g_hud_btnAggressive, c_triggerControlPropertyText, pg, StringToText(none + "Aggressive"));
+    }
+
+    if (s == c_stance_Defensive) {
+        DialogControlSetPropertyAsText(g_hud_btnDefensive, c_triggerControlPropertyText, pg, StringToText(mark + "Defensive"));
+    } else {
+        DialogControlSetPropertyAsText(g_hud_btnDefensive, c_triggerControlPropertyText, pg, StringToText(none + "Defensive"));
+    }
+
+    if (s == c_stance_Flanking) {
+        DialogControlSetPropertyAsText(g_hud_btnFlanking, c_triggerControlPropertyText, pg, StringToText(mark + "Flanking"));
+    } else {
+        DialogControlSetPropertyAsText(g_hud_btnFlanking, c_triggerControlPropertyText, pg, StringToText(none + "Flanking"));
+    }
+
+    if (s == c_stance_Hold) {
+        DialogControlSetPropertyAsText(g_hud_btnHold, c_triggerControlPropertyText, pg, StringToText(mark + "Hold Line"));
+    } else {
+        DialogControlSetPropertyAsText(g_hud_btnHold, c_triggerControlPropertyText, pg, StringToText(none + "Hold Line"));
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+// Update: Refresh the threshold button label for one player
+//--------------------------------------------------------------------------------------------------
+void StrategicHUD_UpdateThresholdButton(int player) {
+    DialogControlSetPropertyAsText(
+        g_hud_btnThreshold,
+        c_triggerControlPropertyText,
+        PlayerGroupSingle(player),
+        StringToText("Retreat: " + HUD_ThresholdName(g_hud_threshold[player]))
+    );
+}
+
+//--------------------------------------------------------------------------------------------------
+// Handler: Command Panel button click
+// UI DRAFT: buttons update state + print a confirmation. No gameplay effects yet.
+//--------------------------------------------------------------------------------------------------
+bool StrategicHUD_OnPanelClick(bool testConds, bool runActions) {
+    int    control;
+    int    player;
+    string msg;
+    control = EventDialogControl();
+    player  = EventPlayer();
+    msg     = "";
+
+    // -- Stance --
+    if (control == g_hud_btnAggressive) {
+        g_hud_stance[player] = c_stance_Aggressive;
+        msg = "<c val=\"FF6666\">STANCE -> Aggressive: Army advances toward the target zone. (not yet wired)</c>";
+    }
+    else if (control == g_hud_btnDefensive) {
+        g_hud_stance[player] = c_stance_Defensive;
+        msg = "<c val=\"6699FF\">STANCE -> Defensive: Army holds your zone perimeter. (not yet wired)</c>";
+    }
+    else if (control == g_hud_btnFlanking) {
+        g_hud_stance[player] = c_stance_Flanking;
+        msg = "<c val=\"FFAA44\">STANCE -> Flanking: Army seeks a wide arc around the enemy frontline. (not yet wired)</c>";
+    }
+    else if (control == g_hud_btnHold) {
+        g_hud_stance[player] = c_stance_Hold;
+        msg = "<c val=\"AAAAAA\">STANCE -> Hold Line: Army roots at the nearest choke point. (not yet wired)</c>";
+    }
+
+    // -- Orders --
+    else if (control == g_hud_btnAttackZone) {
+        g_hud_target[player] = "Pending...";
+        msg = "<c val=\"FFDD44\">ORDER: Attack Zone -- click a location on the minimap to commit. (not yet wired)</c>";
+    }
+    else if (control == g_hud_btnReinforce) {
+        msg = "<c val=\"FFDD44\">ORDER: Reinforce Zone -- new units will route to the frontline. (not yet wired)</c>";
+    }
+    else if (control == g_hud_btnFallBack) {
+        g_hud_target[player] = "-";
+        msg = "<c val=\"88CCFF\">ORDER: Fall Back -- army retreating to home zone. (not yet wired)</c>";
+    }
+    else if (control == g_hud_btnThreshold) {
+        // Cycle: Never -> Low -> Mid -> High -> Never
+        g_hud_threshold[player] = g_hud_threshold[player] + 1;
+        if (g_hud_threshold[player] > c_threshold_High) {
+            g_hud_threshold[player] = c_threshold_Never;
+        }
+        StrategicHUD_UpdateThresholdButton(player);
+        msg = "<c val=\"AAAAAA\">RETREAT threshold -> " + HUD_ThresholdName(g_hud_threshold[player]) + ". (not yet wired)</c>";
+    }
+
+    // -- Economy --
+    else if (control == g_hud_btnExpand) {
+        msg = "<c val=\"88FF88\">ECONOMY: Expand -- flagging nearest viable expansion. (not yet wired)</c>";
+    }
+    else if (control == g_hud_btnArmyComp) {
+        msg = "<c val=\"88FF88\">ECONOMY: Army Comp -- cycle composition target. (not yet wired)</c>";
+    }
+    else if (control == g_hud_btnTechUp) {
+        msg = "<c val=\"88FF88\">ECONOMY: Tech Up -- advancing to next tech tier. (not yet wired)</c>";
+    }
+
+    // Refresh UI
+    StrategicHUD_UpdateStanceButtons(player);
+    StrategicHUD_UpdateStatus(player);
+
+    if (msg != "") {
+        UIDisplayMessage(PlayerGroupSingle(player), c_messageAreaChat, StringToText(msg));
+    }
+
+    return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+// Init: Status Strip
+//--------------------------------------------------------------------------------------------------
+void StrategicHUD_InitStatusStrip(playergroup players) {
+    g_hud_statusDialog = DialogCreate(650, 24, c_anchorTopLeft, 190, 36, false);
+    DialogSetVisible(g_hud_statusDialog, players, true);
+    DialogSetImageVisible(g_hud_statusDialog, true);
+
+    g_hud_lblStatus = DialogControlCreate(g_hud_statusDialog, c_triggerControlTypeLabel);
+    DialogControlSetSize(g_hud_lblStatus, PlayerGroupAll(), 640, 20);
+    DialogControlSetPosition(g_hud_lblStatus, PlayerGroupAll(), c_anchorCenter, 0, 0);
+    DialogControlSetPropertyAsText(g_hud_lblStatus, c_triggerControlPropertyText, players,
+        StringToText("<c val=\"888888\">STANCE: -     TARGET: -     RETREAT: 40%</c>"));
+}
+
+//--------------------------------------------------------------------------------------------------
+// Init: Command Panel
+// Right-side vertical panel. Three sections: STANCE / ORDERS / ECONOMY.
+//
+// Pixel layout (y from top of dialog):
+//   STANCE header  : y=5
+//   Aggressive     : y=26    Defensive : y=60    Flanking : y=94    Hold Line : y=128
+//   ORDERS header  : y=168
+//   Attack Zone    : y=189   Reinforce : y=223   Fall Back: y=257   Retreat   : y=291
+//   ECONOMY header : y=331
+//   Expand         : y=352   Army Comp : y=386   Tech Up  : y=420
+//--------------------------------------------------------------------------------------------------
+void StrategicHUD_InitCommandPanel(playergroup players) {
+    int btnW;
+    int btnH;
+    int cx;
+    int lblStance;
+    int lblOrders;
+    int lblEcoHdr;
+    btnW = 165;
+    btnH = 30;
+    cx   = 0;
+
+    g_hud_panelDialog = DialogCreate(185, 460, c_anchorTopRight, 5, 45, false);
+    DialogSetVisible(g_hud_panelDialog, players, true);
+    DialogSetImageVisible(g_hud_panelDialog, true);
+
+    // -- STANCE section --
+    lblStance = DialogControlCreate(g_hud_panelDialog, c_triggerControlTypeLabel);
+    DialogControlSetSize(lblStance, PlayerGroupAll(), btnW, 18);
+    DialogControlSetPosition(lblStance, PlayerGroupAll(), c_anchorTop, cx, 5);
+    DialogControlSetPropertyAsText(lblStance, c_triggerControlPropertyText, PlayerGroupAll(),
+        StringToText("<c val=\"FFCC44\">--- STANCE ---</c>"));
+
+    g_hud_btnAggressive = DialogControlCreate(g_hud_panelDialog, c_triggerControlTypeButton);
+    DialogControlSetSize(g_hud_btnAggressive, PlayerGroupAll(), btnW, btnH);
+    DialogControlSetPosition(g_hud_btnAggressive, PlayerGroupAll(), c_anchorTop, cx, 26);
+    DialogControlSetPropertyAsText(g_hud_btnAggressive, c_triggerControlPropertyText, players,
+        StringToText("  Aggressive"));
+
+    g_hud_btnDefensive = DialogControlCreate(g_hud_panelDialog, c_triggerControlTypeButton);
+    DialogControlSetSize(g_hud_btnDefensive, PlayerGroupAll(), btnW, btnH);
+    DialogControlSetPosition(g_hud_btnDefensive, PlayerGroupAll(), c_anchorTop, cx, 60);
+    DialogControlSetPropertyAsText(g_hud_btnDefensive, c_triggerControlPropertyText, players,
+        StringToText("  Defensive"));
+
+    g_hud_btnFlanking = DialogControlCreate(g_hud_panelDialog, c_triggerControlTypeButton);
+    DialogControlSetSize(g_hud_btnFlanking, PlayerGroupAll(), btnW, btnH);
+    DialogControlSetPosition(g_hud_btnFlanking, PlayerGroupAll(), c_anchorTop, cx, 94);
+    DialogControlSetPropertyAsText(g_hud_btnFlanking, c_triggerControlPropertyText, players,
+        StringToText("  Flanking"));
+
+    g_hud_btnHold = DialogControlCreate(g_hud_panelDialog, c_triggerControlTypeButton);
+    DialogControlSetSize(g_hud_btnHold, PlayerGroupAll(), btnW, btnH);
+    DialogControlSetPosition(g_hud_btnHold, PlayerGroupAll(), c_anchorTop, cx, 128);
+    DialogControlSetPropertyAsText(g_hud_btnHold, c_triggerControlPropertyText, players,
+        StringToText("  Hold Line"));
+
+    // -- ORDERS section --
+    lblOrders = DialogControlCreate(g_hud_panelDialog, c_triggerControlTypeLabel);
+    DialogControlSetSize(lblOrders, PlayerGroupAll(), btnW, 18);
+    DialogControlSetPosition(lblOrders, PlayerGroupAll(), c_anchorTop, cx, 168);
+    DialogControlSetPropertyAsText(lblOrders, c_triggerControlPropertyText, PlayerGroupAll(),
+        StringToText("<c val=\"FF8844\">--- ORDERS ---</c>"));
+
+    g_hud_btnAttackZone = DialogControlCreate(g_hud_panelDialog, c_triggerControlTypeButton);
+    DialogControlSetSize(g_hud_btnAttackZone, PlayerGroupAll(), btnW, btnH);
+    DialogControlSetPosition(g_hud_btnAttackZone, PlayerGroupAll(), c_anchorTop, cx, 189);
+    DialogControlSetPropertyAsText(g_hud_btnAttackZone, c_triggerControlPropertyText, players,
+        StringToText("Attack Zone"));
+
+    g_hud_btnReinforce = DialogControlCreate(g_hud_panelDialog, c_triggerControlTypeButton);
+    DialogControlSetSize(g_hud_btnReinforce, PlayerGroupAll(), btnW, btnH);
+    DialogControlSetPosition(g_hud_btnReinforce, PlayerGroupAll(), c_anchorTop, cx, 223);
+    DialogControlSetPropertyAsText(g_hud_btnReinforce, c_triggerControlPropertyText, players,
+        StringToText("Reinforce Zone"));
+
+    g_hud_btnFallBack = DialogControlCreate(g_hud_panelDialog, c_triggerControlTypeButton);
+    DialogControlSetSize(g_hud_btnFallBack, PlayerGroupAll(), btnW, btnH);
+    DialogControlSetPosition(g_hud_btnFallBack, PlayerGroupAll(), c_anchorTop, cx, 257);
+    DialogControlSetPropertyAsText(g_hud_btnFallBack, c_triggerControlPropertyText, players,
+        StringToText("Fall Back"));
+
+    g_hud_btnThreshold = DialogControlCreate(g_hud_panelDialog, c_triggerControlTypeButton);
+    DialogControlSetSize(g_hud_btnThreshold, PlayerGroupAll(), btnW, btnH);
+    DialogControlSetPosition(g_hud_btnThreshold, PlayerGroupAll(), c_anchorTop, cx, 291);
+    DialogControlSetPropertyAsText(g_hud_btnThreshold, c_triggerControlPropertyText, players,
+        StringToText("Retreat: 40%"));
+
+    // -- ECONOMY section --
+    lblEcoHdr = DialogControlCreate(g_hud_panelDialog, c_triggerControlTypeLabel);
+    DialogControlSetSize(lblEcoHdr, PlayerGroupAll(), btnW, 18);
+    DialogControlSetPosition(lblEcoHdr, PlayerGroupAll(), c_anchorTop, cx, 331);
+    DialogControlSetPropertyAsText(lblEcoHdr, c_triggerControlPropertyText, PlayerGroupAll(),
+        StringToText("<c val=\"44CCFF\">-- ECONOMY --</c>"));
+
+    g_hud_btnExpand = DialogControlCreate(g_hud_panelDialog, c_triggerControlTypeButton);
+    DialogControlSetSize(g_hud_btnExpand, PlayerGroupAll(), btnW, btnH);
+    DialogControlSetPosition(g_hud_btnExpand, PlayerGroupAll(), c_anchorTop, cx, 352);
+    DialogControlSetPropertyAsText(g_hud_btnExpand, c_triggerControlPropertyText, players,
+        StringToText("+ Expand Base"));
+
+    g_hud_btnArmyComp = DialogControlCreate(g_hud_panelDialog, c_triggerControlTypeButton);
+    DialogControlSetSize(g_hud_btnArmyComp, PlayerGroupAll(), btnW, btnH);
+    DialogControlSetPosition(g_hud_btnArmyComp, PlayerGroupAll(), c_anchorTop, cx, 386);
+    DialogControlSetPropertyAsText(g_hud_btnArmyComp, c_triggerControlPropertyText, players,
+        StringToText("~ Army Comp"));
+
+    g_hud_btnTechUp = DialogControlCreate(g_hud_panelDialog, c_triggerControlTypeButton);
+    DialogControlSetSize(g_hud_btnTechUp, PlayerGroupAll(), btnW, btnH);
+    DialogControlSetPosition(g_hud_btnTechUp, PlayerGroupAll(), c_anchorTop, cx, 420);
+    DialogControlSetPropertyAsText(g_hud_btnTechUp, c_triggerControlPropertyText, players,
+        StringToText("^ Tech Tier Up"));
+}
+
+//--------------------------------------------------------------------------------------------------
+// Init: Economy Info Panel
+//--------------------------------------------------------------------------------------------------
+void StrategicHUD_InitEcoPanel(playergroup players) {
+    g_hud_ecoDialog = DialogCreate(185, 38, c_anchorTopRight, 5, 510, false);
+    DialogSetVisible(g_hud_ecoDialog, players, true);
+    DialogSetImageVisible(g_hud_ecoDialog, true);
+
+    g_hud_lblEco = DialogControlCreate(g_hud_ecoDialog, c_triggerControlTypeLabel);
+    DialogControlSetSize(g_hud_lblEco, PlayerGroupAll(), 175, 32);
+    DialogControlSetPosition(g_hud_lblEco, PlayerGroupAll(), c_anchorCenter, 0, 0);
+    // Placeholder -- replaced by real counts once macro automation exists
+    DialogControlSetPropertyAsText(g_hud_lblEco, c_triggerControlPropertyText, players,
+        StringToText("<c val=\"88FF88\">Bases: 1     Workers: -</c>"));
+}
+
+//--------------------------------------------------------------------------------------------------
+// Public: Initialize the Strategic HUD for both players.
+// Call this after the full draft chain completes.
+//--------------------------------------------------------------------------------------------------
+void StrategicHUD_Init(int p1, int p2) {
+    playergroup players;
+    int i;
+
+    g_hud_p1 = p1;
+    g_hud_p2 = p2;
+
+    // Initialize per-player state
+    i = 1;
+    while (i <= 15) {
+        g_hud_stance[i]    = c_stance_None;
+        g_hud_threshold[i] = c_threshold_Mid;
+        g_hud_target[i]    = "-";
+        i = i + 1;
+    }
+
+    // Build playergroup covering both players
+    players = PlayerGroupEmpty();
+    PlayerGroupAdd(players, p1);
+    if (p2 != p1) { PlayerGroupAdd(players, p2); }
+
+    // Build all three panels
+    StrategicHUD_InitStatusStrip(players);
+    StrategicHUD_InitCommandPanel(players);
+    StrategicHUD_InitEcoPanel(players);
+
+    // Seed per-player label content
+    StrategicHUD_UpdateStatus(p1);
+    StrategicHUD_UpdateStanceButtons(p1);
+    StrategicHUD_UpdateThresholdButton(p1);
+    if (p2 != p1) {
+        StrategicHUD_UpdateStatus(p2);
+        StrategicHUD_UpdateStanceButtons(p2);
+        StrategicHUD_UpdateThresholdButton(p2);
+    }
+
+    // Register click handlers
+    g_hud_trigClick = TriggerCreate("StrategicHUD_OnPanelClick");
+    TriggerAddEventDialogControl(g_hud_trigClick, c_playerAny, g_hud_btnAggressive,  c_triggerControlEventTypeClick);
+    TriggerAddEventDialogControl(g_hud_trigClick, c_playerAny, g_hud_btnDefensive,   c_triggerControlEventTypeClick);
+    TriggerAddEventDialogControl(g_hud_trigClick, c_playerAny, g_hud_btnFlanking,    c_triggerControlEventTypeClick);
+    TriggerAddEventDialogControl(g_hud_trigClick, c_playerAny, g_hud_btnHold,        c_triggerControlEventTypeClick);
+    TriggerAddEventDialogControl(g_hud_trigClick, c_playerAny, g_hud_btnAttackZone,  c_triggerControlEventTypeClick);
+    TriggerAddEventDialogControl(g_hud_trigClick, c_playerAny, g_hud_btnReinforce,   c_triggerControlEventTypeClick);
+    TriggerAddEventDialogControl(g_hud_trigClick, c_playerAny, g_hud_btnFallBack,    c_triggerControlEventTypeClick);
+    TriggerAddEventDialogControl(g_hud_trigClick, c_playerAny, g_hud_btnThreshold,   c_triggerControlEventTypeClick);
+    TriggerAddEventDialogControl(g_hud_trigClick, c_playerAny, g_hud_btnExpand,      c_triggerControlEventTypeClick);
+    TriggerAddEventDialogControl(g_hud_trigClick, c_playerAny, g_hud_btnArmyComp,    c_triggerControlEventTypeClick);
+    TriggerAddEventDialogControl(g_hud_trigClick, c_playerAny, g_hud_btnTechUp,      c_triggerControlEventTypeClick);
+
+    Debug_Log("StrategicHUD initialized.");
+}

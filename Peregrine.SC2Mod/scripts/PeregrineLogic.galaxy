@@ -7,6 +7,7 @@ include "scripts/RaceDraft"
 include "scripts/RosterDraft"
 include "scripts/AdvantageDraft"
 include "scripts/DayNightCycle"
+include "scripts/StrategicHUD"
 
 // =============================================================================
 // Zone Advantage (inlined — separate file has encoding issues with SC2 engine)
@@ -102,6 +103,7 @@ bool Peregrine_OnAdvantageFinished(bool testConds, bool runActions) {
         g_roster_p1Race, g_roster_p2Race
     );
     DayNightCycle_Start();
+    StrategicHUD_Init(g_roster_p1, g_roster_p2);
     return true;
 }
 
