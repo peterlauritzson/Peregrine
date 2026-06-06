@@ -4,4 +4,23 @@
         <LifeStart value="100"/>
         <LifeMax value="100"/>
     </CUnit>
+
+    <!-- =====================================================================
+         PEREGRINE: GHOST BUILDER
+         One spawned per Terran player at game start (off-map, ~(-200, -200)).
+         Invisible, invulnerable, no collision, no selection.
+         Holds PeregrineGhostBuild_Refinery with Range 500 so Galaxy can
+         issue build orders targeting any geyser on the map.
+    ===================================================================== -->
+    <CUnit id="PeregrineGhostBuilder">
+        <EditorCategories value="ObjectFamily:Peregrine"/>
+        <Flags index="Selectable" value="0"/>
+        <Flags index="Targetable" value="0"/>
+        <LifeArmor value="99"/>
+        <ShieldArmor value="99"/>
+        <CollisionUnit value="0"/>
+        <DeathRevealRadius value="0"/>
+        <AbilArray Link="PeregrineGhostBuild_Refinery"/>
+    </CUnit>
+
 </Catalog>

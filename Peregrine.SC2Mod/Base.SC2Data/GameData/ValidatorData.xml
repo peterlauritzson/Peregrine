@@ -14,4 +14,17 @@
         <Value value="0"/>
     </CValidatorUnitCompareBehaviorCount>
 
+    <!-- =====================================================================
+         PEREGRINE: TERRAN AUTO-TRAIN VALIDATOR
+         Fires the SCV train effect only when the caster (CC/OC/PF) has
+         fewer than 16 workers nearby.  WorkerCount is the native field
+         that also drives the worker-count tooltip above Command Centers.
+    ===================================================================== -->
+    <CValidatorUnitCompareField id="PeregrineAutoTrain_WorkerBelowSat">
+        <WhichUnit Value="Caster"/>
+        <Field value="WorkerCount"/>
+        <Compare value="LT"/>
+        <Value value="16"/>
+    </CValidatorUnitCompareField>
+
 </Catalog>

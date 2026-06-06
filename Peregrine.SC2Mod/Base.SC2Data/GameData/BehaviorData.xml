@@ -103,6 +103,20 @@
     </CBehaviorBuff>
 
     <!-- =====================================================================
+         PEREGRINE: TERRAN AUTO-TRAIN SCV
+         Applied permanently to CommandCenter / OrbitalCommand / PlanetaryFortress.
+         Every 8 seconds it fires a PeriodicEffect that issues Train_SCV on the
+         caster, but only when PeregrineAutoTrain_WorkerBelowSat passes
+         (native WorkerCount field < 16).  Minerals are deducted normally.
+    ===================================================================== -->
+    <CBehaviorBuff id="PeregrineAutoTrain_SCV">
+        <InfoFlags index="Hidden" value="1"/>
+        <BehaviorFlags index="Permanent" value="1"/>
+        <Period value="8.0"/>
+        <PeriodicEffect value="PeregrineAutoTrain_SCVEffect"/>
+    </CBehaviorBuff>
+
+    <!-- =====================================================================
          ADVANTAGE UNIT BUFFS
          Applied to non-structure allies inside the zone radius.
          Duration 0.75s + MaxStackCount 1 = refreshes while in zone,

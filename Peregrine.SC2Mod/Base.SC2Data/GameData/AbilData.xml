@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Catalog>
+
+    <!-- =====================================================================
+         PEREGRINE: GHOST BUILDER — BUILD REFINERY
+         Used by PeregrineGhostBuilder to construct a Refinery on a geyser
+         without requiring an SCV.  Range 500 lets a single off-map unit
+         reach any point on the map.  Full mineral cost is deducted normally.
+    ===================================================================== -->
+    <CAbilBuild id="PeregrineGhostBuild_Refinery">
+        <Range value="500"/>
+        <BuildArray Unit="Refinery" Time="30"/>
+    </CAbilBuild>
+
+</Catalog>

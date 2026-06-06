@@ -2,6 +2,17 @@
 <Catalog>
 
     <!-- =====================================================================
+         PEREGRINE: TERRAN AUTO-TRAIN SCV EFFECT
+         Issued by PeregrineAutoTrain_SCV behavior's PeriodicEffect.
+         CEffectIssueOrder targeting Caster issues the native Train_SCV
+         command — full mineral cost deducted, normal queue animation.
+    ===================================================================== -->
+    <CEffectIssueOrder id="PeregrineAutoTrain_SCVEffect">
+        <Abil value="Train_SCV"/>
+        <ValidatorArray value="PeregrineAutoTrain_WorkerBelowSat"/>
+    </CEffectIssueOrder>
+
+    <!-- =====================================================================
          SHARED: Apply PeregrineInZone marker to a target unit.
          Reused by every advantage aura's effect set.
     ===================================================================== -->
