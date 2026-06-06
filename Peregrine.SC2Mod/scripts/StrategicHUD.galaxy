@@ -7,8 +7,16 @@
 //   2. Command Panel (top-right) - all strategic buttons: stance, orders, economy
 //   3. Economy Info  (right)     - base count and worker saturation readout
 //
-// UI DRAFT -- all buttons update state labels and fire a chat confirmation message.
-// No gameplay automation is wired yet. This is intentional.
+// STANCE SCOPING:
+//   Buttons are context-sensitive based on what is currently selected.
+//   - Commander selected  -> stance/order applies to that commander slot only
+//   - Nothing / solo unit -> stance/order applies to the player global (all unassigned units)
+//
+// COMMANDER SLOTS:
+//   Each player has up to c_maxCommanders slots. A slot holds a commander unit handle,
+//   its stance, threshold, target, and (eventually) its assigned squad.
+//   Slot data is indexed as: player * c_maxCommanders + slot  (slot 0..7)
+//   HUD_GetActiveCommanderSlot() is a STUB returning -1 until commander unit types exist.
 //
 // Layout:
 //   Status strip   : c_anchorTopLeft,  x=190, y=36, w=650, h=24
@@ -29,10 +37,23 @@ const int c_threshold_Low   = 1; // ~20% HP
 const int c_threshold_Mid   = 2; // ~40% HP
 const int c_threshold_High  = 3; // ~60% HP
 
-// Per-player state (indexed by player number 1-15)
+// Commander slot constants
+const int c_maxCommanders = 8; // max commanders per player
+
+// ---- Per-player GLOBAL state (indexed by player number 1-15) ----
+// Applies to all solo units not assigned to any commander.
 int[16]    g_hud_stance;
 int[16]    g_hud_threshold;
 string[16] g_hud_target;
+
+// ---- Commander slot state ----
+// Indexed by: player * c_maxCommanders + slot  (slot 0..c_maxCommanders-1)
+// Max index: 15 * 8 + 7 = 127, so arrays need 128 entries.
+unit[128]   g_cmd_unit;      // commander unit handle (null = empty slot)
+int[128]    g_cmd_stance;
+int[128]    g_cmd_threshold;
+string[128] g_cmd_target;
+int[16]     g_cmd_count;     // number of active slots for this player (0..c_maxCommanders)
 
 // Player refs
 int g_hud_p1 = 0;
@@ -53,7 +74,7 @@ int g_hud_btnHold        = c_invalidDialogControlId;
 int g_hud_btnAttackZone  = c_invalidDialogControlId;
 int g_hud_btnReinforce   = c_invalidDialogControlId;
 int g_hud_btnFallBack    = c_invalidDialogControlId;
-int g_hud_btnThreshold   = c_invalidDialogControlId; // cycles retreat threshold
+int g_hud_btnThreshold   = c_invalidDialogControlId;
 // Economy section
 int g_hud_btnExpand      = c_invalidDialogControlId;
 int g_hud_btnArmyComp    = c_invalidDialogControlId;
@@ -65,6 +86,80 @@ int g_hud_lblEco    = c_invalidDialogControlId;
 
 // Click trigger
 trigger g_hud_trigClick = null;
+
+//--------------------------------------------------------------------------------------------------
+// Commander: Register a new commander unit for a player.
+// Call this when a commander unit is created in the world.
+// Returns the assigned slot index, or -1 if slots are full.
+//--------------------------------------------------------------------------------------------------
+int Commander_RegisterSlot(int player, unit u) {
+    int slot;
+    int idx;
+    if (g_cmd_count[player] >= c_maxCommanders) { return -1; }
+    slot = g_cmd_count[player];
+    idx  = player * c_maxCommanders + slot;
+    g_cmd_unit[idx]      = u;
+    g_cmd_stance[idx]    = c_stance_None;
+    g_cmd_threshold[idx] = c_threshold_Mid;
+    g_cmd_target[idx]    = "-";
+    g_cmd_count[player]  = g_cmd_count[player] + 1;
+    return idx;
+}
+
+//--------------------------------------------------------------------------------------------------
+// Commander: Release a slot when a commander dies or is removed.
+//--------------------------------------------------------------------------------------------------
+void Commander_ReleaseSlot(int player, unit u) {
+    int i;
+    int base;
+    int last;
+    int idx;
+    base = player * c_maxCommanders;
+    i = 0;
+    while (i < g_cmd_count[player]) {
+        idx = base + i;
+        if (g_cmd_unit[idx] == u) {
+            // Swap with last slot to keep array packed
+            last = base + g_cmd_count[player] - 1;
+            g_cmd_unit[idx]      = g_cmd_unit[last];
+            g_cmd_stance[idx]    = g_cmd_stance[last];
+            g_cmd_threshold[idx] = g_cmd_threshold[last];
+            g_cmd_target[idx]    = g_cmd_target[last];
+            g_cmd_unit[last]     = null;
+            g_cmd_count[player]  = g_cmd_count[player] - 1;
+            return;
+        }
+        i = i + 1;
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+// Commander: Find the slot index for a given unit. Returns -1 if not a commander.
+//--------------------------------------------------------------------------------------------------
+int Commander_FindSlot(int player, unit u) {
+    int i;
+    int idx;
+    i = 0;
+    while (i < g_cmd_count[player]) {
+        idx = player * c_maxCommanders + i;
+        if (g_cmd_unit[idx] == u) { return idx; }
+        i = i + 1;
+    }
+    return -1;
+}
+
+//--------------------------------------------------------------------------------------------------
+// STUB: Returns the slot index of a selected commander for this player.
+// Returns -1 if no commander is selected (falls through to global stance).
+//
+// TODO: When commander unit types are defined, replace this with:
+//   - Get selected unit group via UIUnitGroup / SelectionGet
+//   - Check each unit against registered commander slots
+//   - Return the first matching slot index
+//--------------------------------------------------------------------------------------------------
+int HUD_GetActiveCommanderSlot(int player) {
+    return -1;
+}
 
 //--------------------------------------------------------------------------------------------------
 // Helper: Stance display name
@@ -89,13 +184,41 @@ string HUD_ThresholdName(int t) {
 }
 
 //--------------------------------------------------------------------------------------------------
-// Update: Refresh the status strip label for one player
+// Helper: Short commander label for the status strip.
+//--------------------------------------------------------------------------------------------------
+string HUD_CmdLabel(int cmdIdx) {
+    return "Cmd #" + IntToString(cmdIdx);
+}
+
+//--------------------------------------------------------------------------------------------------
+// Update: Refresh the status strip for one player.
+// Shows commander context if a commander is active, otherwise shows global state.
 //--------------------------------------------------------------------------------------------------
 void StrategicHUD_UpdateStatus(int player) {
+    int    cmdSlot;
+    int    activeStance;
+    int    activeThreshold;
+    string activeTarget;
     string statusLine;
-    statusLine = "STANCE: " + HUD_StanceName(g_hud_stance[player]);
-    statusLine = statusLine + "     TARGET: " + g_hud_target[player];
-    statusLine = statusLine + "     RETREAT: " + HUD_ThresholdName(g_hud_threshold[player]);
+
+    cmdSlot = HUD_GetActiveCommanderSlot(player);
+
+    if (cmdSlot >= 0) {
+        activeStance    = g_cmd_stance[cmdSlot];
+        activeThreshold = g_cmd_threshold[cmdSlot];
+        activeTarget    = g_cmd_target[cmdSlot];
+        statusLine = "[" + HUD_CmdLabel(cmdSlot) + "]  STANCE: " + HUD_StanceName(activeStance);
+        statusLine = statusLine + "  TARGET: " + activeTarget;
+        statusLine = statusLine + "  RETREAT: " + HUD_ThresholdName(activeThreshold);
+    } else {
+        activeStance    = g_hud_stance[player];
+        activeThreshold = g_hud_threshold[player];
+        activeTarget    = g_hud_target[player];
+        statusLine = "[GLOBAL]  STANCE: " + HUD_StanceName(activeStance);
+        statusLine = statusLine + "  TARGET: " + activeTarget;
+        statusLine = statusLine + "  RETREAT: " + HUD_ThresholdName(activeThreshold);
+    }
+
     DialogControlSetPropertyAsText(
         g_hud_lblStatus,
         c_triggerControlPropertyText,
@@ -105,37 +228,38 @@ void StrategicHUD_UpdateStatus(int player) {
 }
 
 //--------------------------------------------------------------------------------------------------
-// Update: Refresh stance button labels for one player
-// The active stance gets a ">" prefix; all others are plain.
+// Update: Refresh stance button labels for one player.
+// Reads from the active context (commander slot or global).
 //--------------------------------------------------------------------------------------------------
 void StrategicHUD_UpdateStanceButtons(int player) {
     playergroup pg;
-    int s;
+    int    cmdSlot;
+    int    s;
     string mark;
     string none;
-    pg   = PlayerGroupSingle(player);
-    s    = g_hud_stance[player];
-    mark = "> ";
-    none = "  ";
+
+    pg      = PlayerGroupSingle(player);
+    cmdSlot = HUD_GetActiveCommanderSlot(player);
+    if (cmdSlot >= 0) { s = g_cmd_stance[cmdSlot]; }
+    else              { s = g_hud_stance[player]; }
+    mark    = "> ";
+    none    = "  ";
 
     if (s == c_stance_Aggressive) {
         DialogControlSetPropertyAsText(g_hud_btnAggressive, c_triggerControlPropertyText, pg, StringToText(mark + "Aggressive"));
     } else {
         DialogControlSetPropertyAsText(g_hud_btnAggressive, c_triggerControlPropertyText, pg, StringToText(none + "Aggressive"));
     }
-
     if (s == c_stance_Defensive) {
         DialogControlSetPropertyAsText(g_hud_btnDefensive, c_triggerControlPropertyText, pg, StringToText(mark + "Defensive"));
     } else {
         DialogControlSetPropertyAsText(g_hud_btnDefensive, c_triggerControlPropertyText, pg, StringToText(none + "Defensive"));
     }
-
     if (s == c_stance_Flanking) {
         DialogControlSetPropertyAsText(g_hud_btnFlanking, c_triggerControlPropertyText, pg, StringToText(mark + "Flanking"));
     } else {
         DialogControlSetPropertyAsText(g_hud_btnFlanking, c_triggerControlPropertyText, pg, StringToText(none + "Flanking"));
     }
-
     if (s == c_stance_Hold) {
         DialogControlSetPropertyAsText(g_hud_btnHold, c_triggerControlPropertyText, pg, StringToText(mark + "Hold Line"));
     } else {
@@ -144,88 +268,103 @@ void StrategicHUD_UpdateStanceButtons(int player) {
 }
 
 //--------------------------------------------------------------------------------------------------
-// Update: Refresh the threshold button label for one player
+// Update: Refresh the threshold button label for one player.
+// Reads from the active context (commander slot or global).
 //--------------------------------------------------------------------------------------------------
 void StrategicHUD_UpdateThresholdButton(int player) {
+    int    cmdSlot;
+    int    activeThreshold;
+    cmdSlot = HUD_GetActiveCommanderSlot(player);
+    if (cmdSlot >= 0) { activeThreshold = g_cmd_threshold[cmdSlot]; }
+    else              { activeThreshold = g_hud_threshold[player]; }
     DialogControlSetPropertyAsText(
         g_hud_btnThreshold,
         c_triggerControlPropertyText,
         PlayerGroupSingle(player),
-        StringToText("Retreat: " + HUD_ThresholdName(g_hud_threshold[player]))
+        StringToText("Retreat: " + HUD_ThresholdName(activeThreshold))
     );
 }
 
 //--------------------------------------------------------------------------------------------------
-// Handler: Command Panel button click
-// UI DRAFT: buttons update state + print a confirmation. No gameplay effects yet.
+// Handler: Command Panel button click.
+// Routes to the active commander slot if one is selected, otherwise to player global.
 //--------------------------------------------------------------------------------------------------
 bool StrategicHUD_OnPanelClick(bool testConds, bool runActions) {
     int    control;
     int    player;
+    int    cmdSlot;
     string msg;
+
     control = EventDialogControl();
     player  = EventPlayer();
+    cmdSlot = HUD_GetActiveCommanderSlot(player);
     msg     = "";
 
     // -- Stance --
     if (control == g_hud_btnAggressive) {
-        g_hud_stance[player] = c_stance_Aggressive;
-        msg = "<c val=\"FF6666\">STANCE -> Aggressive: Army advances toward the target zone. (not yet wired)</c>";
+        if (cmdSlot >= 0) { g_cmd_stance[cmdSlot]  = c_stance_Aggressive; }
+        else              { g_hud_stance[player]    = c_stance_Aggressive; }
+        msg = "<c val=\"FF6666\">STANCE -> Aggressive (not yet wired)</c>";
     }
     else if (control == g_hud_btnDefensive) {
-        g_hud_stance[player] = c_stance_Defensive;
-        msg = "<c val=\"6699FF\">STANCE -> Defensive: Army holds your zone perimeter. (not yet wired)</c>";
+        if (cmdSlot >= 0) { g_cmd_stance[cmdSlot]  = c_stance_Defensive; }
+        else              { g_hud_stance[player]    = c_stance_Defensive; }
+        msg = "<c val=\"6699FF\">STANCE -> Defensive (not yet wired)</c>";
     }
     else if (control == g_hud_btnFlanking) {
-        g_hud_stance[player] = c_stance_Flanking;
-        msg = "<c val=\"FFAA44\">STANCE -> Flanking: Army seeks a wide arc around the enemy frontline. (not yet wired)</c>";
+        if (cmdSlot >= 0) { g_cmd_stance[cmdSlot]  = c_stance_Flanking; }
+        else              { g_hud_stance[player]    = c_stance_Flanking; }
+        msg = "<c val=\"FFAA44\">STANCE -> Flanking (not yet wired)</c>";
     }
     else if (control == g_hud_btnHold) {
-        g_hud_stance[player] = c_stance_Hold;
-        msg = "<c val=\"AAAAAA\">STANCE -> Hold Line: Army roots at the nearest choke point. (not yet wired)</c>";
+        if (cmdSlot >= 0) { g_cmd_stance[cmdSlot]  = c_stance_Hold; }
+        else              { g_hud_stance[player]    = c_stance_Hold; }
+        msg = "<c val=\"AAAAAA\">STANCE -> Hold Line (not yet wired)</c>";
     }
 
     // -- Orders --
     else if (control == g_hud_btnAttackZone) {
-        g_hud_target[player] = "Pending...";
-        msg = "<c val=\"FFDD44\">ORDER: Attack Zone -- click a location on the minimap to commit. (not yet wired)</c>";
+        if (cmdSlot >= 0) { g_cmd_target[cmdSlot] = "Pending..."; }
+        else              { g_hud_target[player]   = "Pending..."; }
+        msg = "<c val=\"FFDD44\">ORDER: Attack Zone -- click minimap to commit (not yet wired)</c>";
     }
     else if (control == g_hud_btnReinforce) {
-        msg = "<c val=\"FFDD44\">ORDER: Reinforce Zone -- new units will route to the frontline. (not yet wired)</c>";
+        msg = "<c val=\"FFDD44\">ORDER: Reinforce Zone (not yet wired)</c>";
     }
     else if (control == g_hud_btnFallBack) {
-        g_hud_target[player] = "-";
-        msg = "<c val=\"88CCFF\">ORDER: Fall Back -- army retreating to home zone. (not yet wired)</c>";
+        if (cmdSlot >= 0) { g_cmd_target[cmdSlot] = "-"; }
+        else              { g_hud_target[player]   = "-"; }
+        msg = "<c val=\"88CCFF\">ORDER: Fall Back (not yet wired)</c>";
     }
     else if (control == g_hud_btnThreshold) {
-        // Cycle: Never -> Low -> Mid -> High -> Never
-        g_hud_threshold[player] = g_hud_threshold[player] + 1;
-        if (g_hud_threshold[player] > c_threshold_High) {
-            g_hud_threshold[player] = c_threshold_Never;
+        if (cmdSlot >= 0) {
+            g_cmd_threshold[cmdSlot] = g_cmd_threshold[cmdSlot] + 1;
+            if (g_cmd_threshold[cmdSlot] > c_threshold_High) { g_cmd_threshold[cmdSlot] = c_threshold_Never; }
+        } else {
+            g_hud_threshold[player] = g_hud_threshold[player] + 1;
+            if (g_hud_threshold[player] > c_threshold_High) { g_hud_threshold[player] = c_threshold_Never; }
         }
         StrategicHUD_UpdateThresholdButton(player);
-        msg = "<c val=\"AAAAAA\">RETREAT threshold -> " + HUD_ThresholdName(g_hud_threshold[player]) + ". (not yet wired)</c>";
+        msg = "<c val=\"AAAAAA\">RETREAT threshold updated (not yet wired)</c>";
     }
 
     // -- Economy --
     else if (control == g_hud_btnExpand) {
-        msg = "<c val=\"88FF88\">ECONOMY: Expand -- flagging nearest viable expansion. (not yet wired)</c>";
+        msg = "<c val=\"88FF88\">ECONOMY: Expand (not yet wired)</c>";
     }
     else if (control == g_hud_btnArmyComp) {
-        msg = "<c val=\"88FF88\">ECONOMY: Army Comp -- cycle composition target. (not yet wired)</c>";
+        msg = "<c val=\"88FF88\">ECONOMY: Army Comp (not yet wired)</c>";
     }
     else if (control == g_hud_btnTechUp) {
-        msg = "<c val=\"88FF88\">ECONOMY: Tech Up -- advancing to next tech tier. (not yet wired)</c>";
+        msg = "<c val=\"88FF88\">ECONOMY: Tech Up (not yet wired)</c>";
     }
 
-    // Refresh UI
     StrategicHUD_UpdateStanceButtons(player);
     StrategicHUD_UpdateStatus(player);
 
     if (msg != "") {
         UIDisplayMessage(PlayerGroupSingle(player), c_messageAreaChat, StringToText(msg));
     }
-
     return true;
 }
 
@@ -241,7 +380,7 @@ void StrategicHUD_InitStatusStrip(playergroup players) {
     DialogControlSetSize(g_hud_lblStatus, PlayerGroupAll(), 640, 20);
     DialogControlSetPosition(g_hud_lblStatus, PlayerGroupAll(), c_anchorCenter, 0, 0);
     DialogControlSetPropertyAsText(g_hud_lblStatus, c_triggerControlPropertyText, players,
-        StringToText("<c val=\"888888\">STANCE: -     TARGET: -     RETREAT: 40%</c>"));
+        StringToText("<c val=\"888888\">[GLOBAL]  STANCE: -     TARGET: -     RETREAT: 40%</c>"));
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -370,7 +509,6 @@ void StrategicHUD_InitEcoPanel(playergroup players) {
     g_hud_lblEco = DialogControlCreate(g_hud_ecoDialog, c_triggerControlTypeLabel);
     DialogControlSetSize(g_hud_lblEco, PlayerGroupAll(), 175, 32);
     DialogControlSetPosition(g_hud_lblEco, PlayerGroupAll(), c_anchorCenter, 0, 0);
-    // Placeholder -- replaced by real counts once macro automation exists
     DialogControlSetPropertyAsText(g_hud_lblEco, c_triggerControlPropertyText, players,
         StringToText("<c val=\"88FF88\">Bases: 1     Workers: -</c>"));
 }
@@ -386,12 +524,23 @@ void StrategicHUD_Init(int p1, int p2) {
     g_hud_p1 = p1;
     g_hud_p2 = p2;
 
-    // Initialize per-player state
+    // Initialize per-player global state
     i = 1;
     while (i <= 15) {
         g_hud_stance[i]    = c_stance_None;
         g_hud_threshold[i] = c_threshold_Mid;
         g_hud_target[i]    = "-";
+        g_cmd_count[i]     = 0;
+        i = i + 1;
+    }
+
+    // Zero-initialize commander slot arrays
+    i = 0;
+    while (i < 128) {
+        g_cmd_unit[i]      = null;
+        g_cmd_stance[i]    = c_stance_None;
+        g_cmd_threshold[i] = c_threshold_Mid;
+        g_cmd_target[i]    = "-";
         i = i + 1;
     }
 
