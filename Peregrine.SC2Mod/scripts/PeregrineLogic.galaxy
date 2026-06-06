@@ -94,11 +94,9 @@ void ZoneAdvantage_Init(int p1, int p2, int adv1, int adv2, int race1, int race2
 // =============================================================================
 
 //--------------------------------------------------------------------------------------------------
-// Callback: Run when ALL drafts are complete ? game actually starts here
+// Core game-start logic -- called by both the normal draft chain and the debug auto-run.
 //--------------------------------------------------------------------------------------------------
-bool Peregrine_OnAdvantageFinished(bool testConds, bool runActions) {
-    // Activate zone advantage auras based on each player's draft choice.
-    // g_adv_result_p1/p2 are set by AdvantageDraft_Finish().
+void Peregrine_StartGame() {
     ZoneAdvantage_Init(
         g_roster_p1,    g_roster_p2,
         g_adv_result_p1, g_adv_result_p2,
@@ -108,6 +106,122 @@ bool Peregrine_OnAdvantageFinished(bool testConds, bool runActions) {
     StrategicHUD_Init(g_roster_p1, g_roster_p2);
     ResourceRefresh_Start();
     EconomyManager_Init(g_roster_p1, g_roster_p1Race, g_roster_p2, g_roster_p2Race);
+}
+
+//--------------------------------------------------------------------------------------------------
+// Debug: Skip all draft UIs, randomly assign races / rosters / advantages, start game.
+// Wired to the [DEBUG: Random All] button shown in RaceDraft in debug mode.
+//--------------------------------------------------------------------------------------------------
+bool Peregrine_DebugAutoRun(bool testConds, bool runActions) {
+    int banRace;
+    int pickRace;
+    int p1Race;
+    int otherRace1;
+    int otherRace2;
+    int t1Race;
+    int t2Race;
+    int usedMask;
+    int poolCount;
+    int pick;
+    int pickCount;
+    string logMsg;
+
+    // Random race: ban one, P2 picks one of the remaining two, P1 gets the third.
+    banRace = RandomInt(1, 3);
+    if (banRace == c_peregrine_raceTerran) {
+        otherRace1 = c_peregrine_raceProtoss;
+        otherRace2 = c_peregrine_raceZerg;
+    } else if (banRace == c_peregrine_raceProtoss) {
+        otherRace1 = c_peregrine_raceTerran;
+        otherRace2 = c_peregrine_raceZerg;
+    } else {
+        otherRace1 = c_peregrine_raceTerran;
+        otherRace2 = c_peregrine_raceProtoss;
+    }
+    if (RandomInt(0, 1) == 0) {
+        pickRace = otherRace1;
+        p1Race   = otherRace2;
+    } else {
+        pickRace = otherRace2;
+        p1Race   = otherRace1;
+    }
+    if (g_draft_p1_is_team1) {
+        t1Race = p1Race;
+        t2Race = pickRace;
+    } else {
+        t1Race = pickRace;
+        t2Race = p1Race;
+    }
+    SetTeamRace(g_draft_team1, t1Race);
+    SetTeamRace(g_draft_team2, t2Race);
+    g_draft_bannedRace = banRace;
+    g_draft_p1Race     = p1Race;
+    g_draft_p2Race     = pickRace;
+
+    // Populate roster globals (normally set by RosterDraft_Start).
+    g_roster_p1     = g_draft_p1;
+    g_roster_p2     = g_draft_p2;
+    g_roster_p1Race = g_draft_p1Race;
+    g_roster_p2Race = g_draft_p2Race;
+
+    // Random roster for P1: 2 core units + 4 random pool picks.
+    g_roster_p1Units[1] = GetCoreUnit(g_roster_p1Race, 1);
+    g_roster_p1Units[2] = GetCoreUnit(g_roster_p1Race, 2);
+    poolCount = GetRosterPoolCount(g_roster_p1Race);
+    usedMask  = 0;
+    pickCount = 3;
+    while (pickCount <= c_rosterRosterSize) {
+        pick = RandomInt(1, poolCount);
+        if ((usedMask & (1 << (pick - 1))) == 0) {
+            usedMask = usedMask | (1 << (pick - 1));
+            g_roster_p1Units[pickCount] = GetRosterPoolUnit(g_roster_p1Race, pick);
+            pickCount = pickCount + 1;
+        }
+    }
+
+    // Random roster for P2.
+    g_roster_p2Units[1] = GetCoreUnit(g_roster_p2Race, 1);
+    g_roster_p2Units[2] = GetCoreUnit(g_roster_p2Race, 2);
+    poolCount = GetRosterPoolCount(g_roster_p2Race);
+    usedMask  = 0;
+    pickCount = 3;
+    while (pickCount <= c_rosterRosterSize) {
+        pick = RandomInt(1, poolCount);
+        if ((usedMask & (1 << (pick - 1))) == 0) {
+            usedMask = usedMask | (1 << (pick - 1));
+            g_roster_p2Units[pickCount] = GetRosterPoolUnit(g_roster_p2Race, pick);
+            pickCount = pickCount + 1;
+        }
+    }
+
+    // Random advantage per player (slot 1-3 = race-specific, slot 4 = wildcard).
+    g_adv_result_p1 = AdvantageDraft_OptionForSlot(g_roster_p1Race, RandomInt(1, 4));
+    g_adv_result_p2 = AdvantageDraft_OptionForSlot(g_roster_p2Race, RandomInt(1, 4));
+
+    // Tear down the race draft UI and trigger.
+    if (g_draft_trigger != null) {
+        TriggerDestroy(g_draft_trigger);
+        g_draft_trigger = null;
+    }
+    if (g_draft_dialog != c_invalidDialogId) {
+        DialogDestroy(g_draft_dialog);
+        g_draft_dialog = c_invalidDialogId;
+    }
+
+    logMsg = "AUTO DRAFT: Ban=" + RaceName(banRace) + " P1=" + RaceName(g_draft_p1Race) + " P2=" + RaceName(g_draft_p2Race);
+    Debug_Log(logMsg);
+    UIDisplayMessage(PlayerGroupAll(), c_messageAreaChat, StringToText("AUTO DRAFT: P1=" + RaceName(g_draft_p1Race) + "  P2=" + RaceName(g_draft_p2Race)));
+
+    GameSetMissionTimePaused(false);
+    Peregrine_StartGame();
+    return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+// Callback: Run when ALL drafts are complete -- game actually starts here
+//--------------------------------------------------------------------------------------------------
+bool Peregrine_OnAdvantageFinished(bool testConds, bool runActions) {
+    Peregrine_StartGame();
     return true;
 }
 
@@ -146,6 +260,9 @@ bool Peregrine_OnDraftFinished(bool testConds, bool runActions) {
 void Peregrine_Init() {
     trigger t;
     Debug_Init();
+    if (g_debugLevel > c_debug_None) {
+        Debug_SetAutoRunTrigger(TriggerCreate("Peregrine_DebugAutoRun"));
+    }
     UIDisplayMessage(PlayerGroupAll(), c_messageAreaChat, StringToText("Peregrine Logic Loaded Successfully!"));
 
     // Create the callback trigger

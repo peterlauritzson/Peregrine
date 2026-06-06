@@ -18,7 +18,7 @@ int g_draft_phase = 0; // 0 = Ban, 1 = Pick
 trigger g_draft_trigger;
 trigger g_draft_callback = null;
 
-// Exposed results — set at finish, read by subsequent draft phases
+// Exposed results ? set at finish, read by subsequent draft phases
 int g_draft_p1Race = 0; // race of g_draft_p1 (the banning player)
 int g_draft_p2Race = 0; // race of g_draft_p2 (the picking player)
 
@@ -28,6 +28,7 @@ int g_draft_label = c_invalidDialogControlId;
 int g_draft_btnTerran = c_invalidDialogControlId;
 int g_draft_btnProtoss = c_invalidDialogControlId;
 int g_draft_btnZerg = c_invalidDialogControlId;
+int g_draft_btnAutoRun = c_invalidDialogControlId;
 
 //--------------------------------------------------------------------------------------------------
 // Helper: Get Race Config ID
@@ -42,7 +43,7 @@ string GetRaceConfigId(int race) {
 //--------------------------------------------------------------------------------------------------
 // Helper: Get Core Unit
 // Single access point for core unit definitions (GameData.xml / PeregrineRosterConfig).
-// To change a race's core units, edit CoreUnit1 / CoreUnit2 in GameData.xml — all draft
+// To change a race's core units, edit CoreUnit1 / CoreUnit2 in GameData.xml ? all draft
 // phases (race announcement, roster panel, pool filtering) update automatically.
 //--------------------------------------------------------------------------------------------------
 string GetCoreUnit(int race, int slot) {
@@ -225,7 +226,7 @@ void RaceDraft_Finish(int pickedRace) {
     DialogDestroy(g_draft_dialog);
 
     // NOTE: Do NOT unpause here. The chained draft phases manage pausing.
-    // AdvantageDraft_Finish() — the final phase — calls GameSetMissionTimePaused(false).
+    // AdvantageDraft_Finish() ? the final phase ? calls GameSetMissionTimePaused(false).
 
     // Run Callback
     if (g_draft_callback != null) {
@@ -302,6 +303,13 @@ bool RaceDraft_OnClicked(bool testConds, bool runActions) {
     if (control == g_draft_btnTerran) { selectedRace = c_peregrine_raceTerran; }
     else if (control == g_draft_btnProtoss) { selectedRace = c_peregrine_raceProtoss; }
     else if (control == g_draft_btnZerg) { selectedRace = c_peregrine_raceZerg; }
+
+    if (control == g_draft_btnAutoRun) {
+        if (g_debug_autoRunTrigger != null) {
+            TriggerExecute(g_debug_autoRunTrigger, false, false);
+        }
+        return true;
+    }
 
     if (selectedRace == 0) { return true; }
 
@@ -456,11 +464,22 @@ void RaceDraft_Start(trigger callback) {
     DialogControlSetPosition(g_draft_btnZerg, PlayerGroupAll(), c_anchorTop, 0, 270);
     DialogControlSetPropertyAsText(g_draft_btnZerg, c_triggerControlPropertyText, PlayerGroupAll(), StringToText("Zerg"));
 
+    // Debug skip button
+    if (g_debugLevel > c_debug_None) {
+        g_draft_btnAutoRun = DialogControlCreate(g_draft_dialog, c_triggerControlTypeButton);
+        DialogControlSetSize(g_draft_btnAutoRun, PlayerGroupAll(), 200, 30);
+        DialogControlSetPosition(g_draft_btnAutoRun, PlayerGroupAll(), c_anchorTop, 0, 340);
+        DialogControlSetPropertyAsText(g_draft_btnAutoRun, c_triggerControlPropertyText, PlayerGroupAll(), StringToText("[ DEBUG: Random All ]"));
+    }
+
     // Register Trigger
     g_draft_trigger = TriggerCreate("RaceDraft_OnClicked");
     TriggerAddEventDialogControl(g_draft_trigger, c_playerAny, g_draft_btnTerran, c_triggerControlEventTypeClick);
     TriggerAddEventDialogControl(g_draft_trigger, c_playerAny, g_draft_btnProtoss, c_triggerControlEventTypeClick);
     TriggerAddEventDialogControl(g_draft_trigger, c_playerAny, g_draft_btnZerg, c_triggerControlEventTypeClick);
+    if (g_debugLevel > c_debug_None && g_draft_btnAutoRun != c_invalidDialogControlId) {
+        TriggerAddEventDialogControl(g_draft_trigger, c_playerAny, g_draft_btnAutoRun, c_triggerControlEventTypeClick);
+    }
 
     // Start
     RaceDraft_UpdateUI();

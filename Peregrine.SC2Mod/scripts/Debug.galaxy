@@ -8,6 +8,11 @@ const int c_debug_All = 1;
 
 // Global State
 int g_debugLevel = c_debug_None;
+trigger g_debug_autoRunTrigger = null;
+
+void Debug_SetAutoRunTrigger(trigger t) {
+    g_debug_autoRunTrigger = t;
+}
 
 //--------------------------------------------------------------------------------------------------
 // Initialize Debug Level
