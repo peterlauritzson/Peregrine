@@ -8,9 +8,11 @@ include "scripts/RosterDraft"
 include "scripts/AdvantageDraft"
 include "scripts/DayNightCycle"
 include "scripts/StrategicHUD"
+include "scripts/ResourceRefresh"
+include "scripts/EconomyManager"
 
 // =============================================================================
-// Zone Advantage (inlined — separate file has encoding issues with SC2 engine)
+// Zone Advantage (inlined ? separate file has encoding issues with SC2 engine)
 // =============================================================================
 int    g_za_p1;
 int    g_za_p2;
@@ -92,7 +94,7 @@ void ZoneAdvantage_Init(int p1, int p2, int adv1, int adv2, int race1, int race2
 // =============================================================================
 
 //--------------------------------------------------------------------------------------------------
-// Callback: Run when ALL drafts are complete — game actually starts here
+// Callback: Run when ALL drafts are complete ? game actually starts here
 //--------------------------------------------------------------------------------------------------
 bool Peregrine_OnAdvantageFinished(bool testConds, bool runActions) {
     // Activate zone advantage auras based on each player's draft choice.
@@ -104,11 +106,13 @@ bool Peregrine_OnAdvantageFinished(bool testConds, bool runActions) {
     );
     DayNightCycle_Start();
     StrategicHUD_Init(g_roster_p1, g_roster_p2);
+    ResourceRefresh_Start();
+    EconomyManager_Init(g_roster_p1, g_roster_p1Race, g_roster_p2, g_roster_p2Race);
     return true;
 }
 
 //--------------------------------------------------------------------------------------------------
-// Callback: Run when the Roster Draft is complete — kick off the Advantage Draft
+// Callback: Run when the Roster Draft is complete ? kick off the Advantage Draft
 //--------------------------------------------------------------------------------------------------
 bool Peregrine_OnRosterFinished(bool testConds, bool runActions) {
     trigger advCallback;
@@ -124,7 +128,7 @@ bool Peregrine_OnRosterFinished(bool testConds, bool runActions) {
 }
 
 //--------------------------------------------------------------------------------------------------
-// Callback: Run when the Race Draft is complete — kick off the Roster Draft
+// Callback: Run when the Race Draft is complete ? kick off the Roster Draft
 //--------------------------------------------------------------------------------------------------
 bool Peregrine_OnDraftFinished(bool testConds, bool runActions) {
     trigger rosterCallback;
@@ -147,6 +151,6 @@ void Peregrine_Init() {
     // Create the callback trigger
     t = TriggerCreate("Peregrine_OnDraftFinished");
 
-    // Start the draft chain: Race → Roster → Advantage → Game
+    // Start the draft chain: Race ? Roster ? Advantage ? Game
     RaceDraft_Start(t);
 }

@@ -1,0 +1,120 @@
+//--------------------------------------------------------------------------------------------------
+// Terran Economy
+//
+// Automates SCV production and mineral assignment for Terran players.
+// Pure tick functions -- no internal loop. Called by EconomyManager.
+//
+// Public interface:
+//   TerranEconomy_TrainWorkers(player)     -- queue SCVs from idle town halls
+//   TerranEconomy_AssignIdleWorkers(player)-- send idle SCVs to nearest mineral patch
+//   TerranEconomy_Tick(player)             -- calls both of the above
+//
+// TODO: gas saturation (3 SCVs per Refinery)
+// TODO: smarter base-transfer when one base is oversaturated
+//--------------------------------------------------------------------------------------------------
+
+const int   c_terranMineralSat = 16;   // target SCV count per town hall
+const fixed c_terranEcoRadius  = 12.0; // radius used to count SCVs as "belonging" to a base
+
+//--------------------------------------------------------------------------------------------------
+// Count SCVs alive within c_terranEcoRadius of a given town hall.
+//--------------------------------------------------------------------------------------------------
+int TerranEconomy_NearbyWorkerCount(unit cc) {
+    unitgroup g;
+    g = UnitGroup("SCV", UnitGetOwner(cc),
+                  RegionCircle(UnitGetPosition(cc), c_terranEcoRadius),
+                  UnitFilter(0, 0, 0, 0), 0);
+    return UnitGroupCount(g, c_unitCountAll);
+}
+
+//--------------------------------------------------------------------------------------------------
+// Queue one SCV from each idle building of buildingType if below saturation.
+//--------------------------------------------------------------------------------------------------
+void TerranEconomy_TrainFromType(string buildingType, int player) {
+    unitgroup g;
+    unit cc;
+    int i;
+    int count;
+    g     = UnitGroup(buildingType, player, RegionEntireMap(), UnitFilter(0, 0, 0, 0), 0);
+    count = UnitGroupCount(g, c_unitCountAll);
+    i = 1;
+    while (i <= count) {
+        cc = UnitGroupUnit(g, i);
+        if (UnitOrderCount(cc) == 0 && TerranEconomy_NearbyWorkerCount(cc) < c_terranMineralSat) {
+            UnitCreate(1, "SCV", 0, player, UnitGetPosition(cc), 270.0);
+        }
+        i = i + 1;
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+// Train SCVs from all Terran town hall variants.
+//--------------------------------------------------------------------------------------------------
+void TerranEconomy_TrainWorkers(int player) {
+    TerranEconomy_TrainFromType("CommandCenter",     player);
+    TerranEconomy_TrainFromType("OrbitalCommand",    player);
+    TerranEconomy_TrainFromType("PlanetaryFortress", player);
+}
+
+//--------------------------------------------------------------------------------------------------
+// Find the mineral patch nearest to a given map point. Returns null if none found.
+//--------------------------------------------------------------------------------------------------
+unit TerranEconomy_NearestPatch(point origin) {
+    unitgroup patches;
+    unit best;
+    unit patch;
+    fixed bestD;
+    fixed d;
+    int i;
+    int count;
+    patches = UnitGroup("MineralField", c_playerAny, RegionEntireMap(), UnitFilter(0, 0, 0, 0), 0);
+    count   = UnitGroupCount(patches, c_unitCountAll);
+    best    = null;
+    bestD   = 99999.0;
+    i = 1;
+    while (i <= count) {
+        patch = UnitGroupUnit(patches, i);
+        d = DistanceBetweenPoints(origin, UnitGetPosition(patch));
+        if (d < bestD) {
+            bestD = d;
+            best  = patch;
+        }
+        i = i + 1;
+    }
+    return best;
+}
+
+//--------------------------------------------------------------------------------------------------
+// Issue a harvest order to each idle SCV toward the nearest mineral patch.
+// TODO: verify "Harvest_Gather" is the correct abilcmd; adjust if SCVs do not respond.
+//--------------------------------------------------------------------------------------------------
+void TerranEconomy_AssignIdleWorkers(int player) {
+    unitgroup workers;
+    unit worker;
+    unit patch;
+    int i;
+    int count;
+    workers = UnitGroup("SCV", player, RegionEntireMap(), UnitFilter(0, 0, 0, 0), 0);
+    count   = UnitGroupCount(workers, c_unitCountAll);
+    i = 1;
+    while (i <= count) {
+        worker = UnitGroupUnit(workers, i);
+        if (UnitOrderCount(worker) == 0) {
+            patch = TerranEconomy_NearestPatch(UnitGetPosition(worker));
+            if (patch != null) {
+                UnitIssueOrder(worker,
+                    OrderTargetingUnit(AbilityCommand("Harvest_Gather", 0), patch),
+                    0);
+            }
+        }
+        i = i + 1;
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+// One full economy tick for a Terran player.
+//--------------------------------------------------------------------------------------------------
+void TerranEconomy_Tick(int player) {
+    TerranEconomy_TrainWorkers(player);
+    TerranEconomy_AssignIdleWorkers(player);
+}

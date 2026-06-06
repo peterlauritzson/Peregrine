@@ -1,0 +1,99 @@
+//--------------------------------------------------------------------------------------------------
+// Zerg Economy
+//
+// Zerg has no workers. Income is injected directly every tick based on how many
+// mineral patches are within range of the player's hatcheries/lairs/hives.
+//
+// Pure tick functions -- no internal loop. Called by EconomyManager.
+//
+// Public interface:
+//   ZergEconomy_MineralIncome(player)  -- inject minerals from hatchery proximity
+//   ZergEconomy_GasIncome(player)      -- inject gas from owned Extractors
+//   ZergEconomy_Tick(player)           -- calls both of the above
+//
+// v1 SIMPLIFICATION: all hatcheries contribute regardless of creep chain connectivity.
+// TODO: implement creep colony chain -- only connected nodes generate income.
+// TODO: colonies beyond a severed chain buffer resources until chain is repaired.
+//
+// Balance: c_zergIncomePerPatch and c_zergGasPerExtractor are rough estimates.
+// Tune against Terran/Protoss income after playtesting.
+//--------------------------------------------------------------------------------------------------
+
+const fixed c_zergHatchRadius     = 12.0; // radius a hatchery scans for mineral patches
+const int   c_zergIncomePerPatch  = 12;   // minerals per in-range patch per tick  (balance TBD)
+const int   c_zergGasPerExtractor = 4;    // gas per Extractor per tick             (balance TBD)
+
+//--------------------------------------------------------------------------------------------------
+// Scan all buildings of buildingType owned by player.
+// For each one, count mineral patches in range and inject income proportionally.
+//--------------------------------------------------------------------------------------------------
+void ZergEconomy_IncomeFromBuilding(string buildingType, int player) {
+    unitgroup buildings;
+    unitgroup patches;
+    unit b;
+    unit patch;
+    int i;
+    int j;
+    int bCount;
+    int pCount;
+    int income;
+    fixed d;
+
+    buildings = UnitGroup(buildingType, player, RegionEntireMap(), UnitFilter(0, 0, 0, 0), 0);
+    bCount    = UnitGroupCount(buildings, c_unitCountAll);
+    if (bCount == 0) { return; }
+
+    patches = UnitGroup("MineralField", c_playerAny, RegionEntireMap(), UnitFilter(0, 0, 0, 0), 0);
+    pCount  = UnitGroupCount(patches, c_unitCountAll);
+
+    income = 0;
+    i = 1;
+    while (i <= bCount) {
+        b = UnitGroupUnit(buildings, i);
+        j = 1;
+        while (j <= pCount) {
+            patch = UnitGroupUnit(patches, j);
+            d = DistanceBetweenPoints(UnitGetPosition(b), UnitGetPosition(patch));
+            if (d <= c_zergHatchRadius) {
+                income = income + c_zergIncomePerPatch;
+            }
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+
+    if (income > 0) {
+        PlayerModifyPropertyInt(player, c_playerPropMinerals, c_playerPropOperAdd, income);
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+// Inject gas income proportional to owned Extractors.
+// TODO: tie gas income to chain connectivity once colony system is implemented.
+//--------------------------------------------------------------------------------------------------
+void ZergEconomy_GasIncome(int player) {
+    unitgroup extractors;
+    int count;
+    extractors = UnitGroup("Extractor", player, RegionEntireMap(), UnitFilter(0, 0, 0, 0), 0);
+    count      = UnitGroupCount(extractors, c_unitCountAll);
+    if (count > 0) {
+        PlayerModifyPropertyInt(player, c_playerPropVespene, c_playerPropOperAdd, count * c_zergGasPerExtractor);
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+// Inject mineral income from all Zerg main-hive structures.
+//--------------------------------------------------------------------------------------------------
+void ZergEconomy_MineralIncome(int player) {
+    ZergEconomy_IncomeFromBuilding("Hatchery", player);
+    ZergEconomy_IncomeFromBuilding("Lair",     player);
+    ZergEconomy_IncomeFromBuilding("Hive",     player);
+}
+
+//--------------------------------------------------------------------------------------------------
+// One full economy tick for a Zerg player.
+//--------------------------------------------------------------------------------------------------
+void ZergEconomy_Tick(int player) {
+    ZergEconomy_MineralIncome(player);
+    ZergEconomy_GasIncome(player);
+}

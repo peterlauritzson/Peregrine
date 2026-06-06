@@ -1,89 +1,132 @@
-# Peregrine — Current State
+﻿# Peregrine -- Current State
 
 Last updated: June 6, 2026
 
 ---
 
-## ✅ What's Built
+## What's Built
 
 ### Pre-Game Draft Chain
-The three draft phases are wired together in sequence and run end-to-end on game start (`Peregrine_Init` → Race → Roster → Advantage → Game).
+Wired end-to-end on game start: Race -> Roster -> Advantage -> Game.
 
 #### 1. Race Draft (`RaceDraft.galaxy`)
-- P1 bans a race, P2 picks from the remaining two, P1 gets the remainder.
-- Starting units, workers, and resources are physically swapped out via `SetPlayerRace()`.
+- P1 bans a race, P2 picks, P1 gets the remainder.
+- Starting units, workers, and resources physically swapped via `SetPlayerRace()`.
 - **Live and affects the game.**
 
 #### 2. Roster Draft (`RosterDraft.galaxy`)
-- Ban phase + snake-pick phase UI. Each player drafts 4 units from their race's pool of 12 (+ 2 auto-assigned core units).
-- Results are stored in `g_roster_p1Units[]` / `g_roster_p2Units[]`.
-- **UI works, but the drafted roster is not enforced** — the stored picks are never used to restrict what players can actually build.
+- Ban phase + snake-pick UI. Each player drafts 4 units from pool of 12 (+ 2 core units auto-assigned).
+- Results stored in `g_roster_p1Units[]` / `g_roster_p2Units[]`.
+- **UI works -- roster is NOT enforced.** Players can still build any unit.
 
 #### 3. Advantage Draft (`AdvantageDraft.galaxy`)
-- Each player simultaneously picks 1 Zone Advantage: 3 race-specific options + 1 wildcard (Phase Shifting).
-- Result feeds directly into `ZoneAdvantage_Init()` after the draft completes.
+- Each player picks 1 Zone Advantage (3 race-specific + 1 wildcard).
+- Result feeds into `ZoneAdvantage_Init()` which attaches auras to zone structures.
 
 ---
 
 ### Zone Advantage Aura System
-- All 10 `PeregrineAura_*` behaviors are defined in `BehaviorData.xml`.
-- All 10 `PeregrineAuraEffect_*` area-scan effects are defined in `EffectData.xml`.
-- After the draft, `ZoneAdvantage_Init()` attaches the chosen aura to the player's zone structures (Pylons / Hatcheries / Sensor Towers). A polling loop re-scans and re-applies every 5 seconds (handles new structures built mid-game).
-- **Likely functional**, but untested at scale / unbalanced.
-
-| # | Advantage | Race | Effect |
-|---|---|---|---|
-| 1 | Feral Reclamation | Zerg | +4 HP/sec regen for allies in zone |
-| 2 | Hyper-Metabolic Overheal | Zerg | +100 Max HP + fast regen in zone |
-| 3 | Adaptive Camouflage | Zerg | +3 life armor in zone |
-| 4 | Quantum Relocation | Protoss | +30% move speed in zone |
-| 5 | Harmonic Shielding | Protoss | +4 shield armor in zone |
-| 6 | Chronological Override | Protoss | +40% attack speed, +20% move speed |
-| 7 | Orbital Munitions | Terran | Auto-damages enemies in zone every 1s |
-| 8 | Kinetic Overdrive | Terran | +25% move speed in zone |
-| 9 | Scrap Scavenging | Terran | +2 life armor in zone |
-| 10 | Phase Shifting | Wildcard | +20% speed, +1 all armor in zone |
+- All 10 `PeregrineAura_*` behaviors defined in `BehaviorData.xml`.
+- All 10 `PeregrineAuraEffect_*` area-scan effects defined in `EffectData.xml`.
+- `ZoneAdvantage_Init()` attaches chosen aura to zone structures (Pylons / Hatcheries / Sensor Towers). Polling loop re-applies every 5 seconds to catch new structures.
+- Likely functional, untested at scale / unbalanced.
 
 ---
 
 ### Tidal Cycle (`DayNightCycle.galaxy`)
-- HUD widget (bottom-left) showing current phase name, countdown timer, next-phase icon, and a minimize button.
-- Cycles through 3 phases on a loop: **The Khala Surge** → **The Swarm Tide** → **The Iron Hour**.
-- Each phase transition changes the map lighting and plays an ambient sound.
-- Phase duration: **10 seconds** (debug value — configured in `GameData.xml` under `PeregrineDayNightConfig > PhaseDuration`).
-- **Pure presentation only** — no gameplay effects are tied to the phase yet.
+- HUD widget bottom-left: current phase, countdown, next-phase icon, minimize button.
+- 3-phase loop: **The Khala Surge** (Protoss/yellow) -> **The Swarm Tide** (Zerg/red) -> **The Iron Hour** (Terran/blue).
+- Changes map lighting and plays ambient sound per phase.
+- Phase duration: **10 seconds** (debug value -- `PeregrineDayNightConfig > PhaseDuration` in `GameData.xml`).
+- **Cosmetic only** -- no gameplay buffs wired yet.
 
 ---
 
-## ❌ What's Missing
+### Strategic HUD (`StrategicHUD.galaxy`)
+Persistent overlay UI with three panels.
 
-### Roster Enforcement *(High priority)*
-The roster draft picks in `g_roster_p1Units[]` are stored but never consulted. Players can build any unit from the full tech tree regardless of what they drafted. The system needs a production hook or unit-kill trigger to enforce the chosen 6-unit roster.
+**1. Status Strip** (top-left, below resource bar)
+- Single label: `[GLOBAL] STANCE: x  TARGET: x  RETREAT: x`
+- Switches to `[Cmd #N]` context when a commander is selected (commander selection is a stub).
 
-### Tidal Cycle Gameplay Effects *(High priority)*
-The cycle is cosmetic. Nothing changes gameplay-wise when a phase shifts. The intended design (one race gets a buff per phase) has no implementation. Needs:
-- A callback or hook in `DayNightCycle_RunPhase()` to fire per-phase logic.
-- Per-phase buff application/removal for the favored faction's units.
+**2. Command Panel** (top-right vertical)
+- STANCE section: Aggressive / Defensive / Flanking / Hold Line
+- ORDERS section: Attack Zone / Reinforce Zone / Fall Back / Retreat threshold (cycles Never/20%/40%/60%)
+- ECONOMY section: + Expand Base / ~ Army Comp / ^ Tech Tier Up
+- All buttons write to either the active commander slot OR global player state.
+- All buttons print `(not yet wired)` -- no gameplay automation yet.
 
-### Tidal Cycle Phase Duration
-10s is a debug value. Real matches need something in the range of **120–180 seconds**. Change `PhaseDuration` in `GameData.xml`.
+**3. Economy Info Panel** (right, below command panel)
+- Placeholder label `Bases: 1  Workers: -`.
 
-### Autonomous Macro
-Workers exist as normal SC2 workers. The README describes a system where players designate expansion zones and the mod handles harvesting — this layer does not exist.
-
-### Commander / Squad System
-No squads, no commander units, no stance directives, no command latency. The "play as a general" core loop described in the README is entirely unimplemented.
-
-### Agitation Mechanic
-"Units hate standing still" — not implemented. No idle-detection or drift behavior exists.
-
-### Tidal Cycle Icons / Assets
-The HUD references `IconDay`, `IconDusk`, `IconNight` string fields from `PeregrineDayNightConfig` in XML. Whether these point to real assets or empty strings should be verified.
+**Commander slot architecture** (data live, behavior stubbed)
+- Up to 8 commander slots per player, indexed `player * 8 + slot`.
+- `Commander_RegisterSlot()`, `Commander_ReleaseSlot()`, `Commander_FindSlot()` implemented.
+- `HUD_GetActiveCommanderSlot()` is a **stub returning -1** -- all HUD actions fall through to global stance until filled in.
 
 ---
 
-## Suggested Next Steps
+### Resource Refresh (`ResourceRefresh.galaxy`)
+Prevents all mineral and gas sources from ever depleting.
+- 30-second polling loop.
+- Tops up all mineral field variants, neutral geysers, and owned gas buildings (Refinery / Assimilator / Extractor and Rich variants).
 
-1. **Bump Tidal Cycle duration** to something playable (quick config change in XML).
-2. **Wire Tidal Cycle buffs** — add a phase-change callback in `DayNightCycle_Loop()` that applies a race-specific buff to the favored faction. Self-contained and high-visibility impact.
-3. **Enforce the Roster Draft** — add a unit-creation event trigger that removes any unit not in the player's drafted roster, or gates production buildings.
+---
+
+### Economy Systems (new this session)
+Fully automated economy, always running. 8-second tick dispatches to race-specific handler.
+
+**Terran** (`TerranEconomy.galaxy`)
+- `TerranEconomy_TrainWorkers` -- queues SCVs from idle CC/OC/PF when below 16 workers in radius.
+- `TerranEconomy_AssignIdleWorkers` -- issues harvest order to orderless SCVs toward nearest mineral patch.
+- Gas saturation and smart base transfer are TODO.
+
+**Protoss** (`ProtossEconomy.galaxy`)
+- `ProtossEconomy_TrainProbes` -- produces probes from idle Nexus when unanchored patches exist and no idle probes are waiting.
+- `ProtossEconomy_AnchorIdleProbes` -- sends idle probes to the first unanchored mineral patch.
+- Pylon-warp mechanic is TODO.
+
+**Zerg** (`ZergEconomy.galaxy`)
+- No workers. Income injected directly per tick.
+- `ZergEconomy_MineralIncome` -- minerals proportional to patches within range of Hatchery/Lair/Hive.
+- `ZergEconomy_GasIncome` -- gas per owned Extractor.
+- Creep colony chain connectivity check is TODO; v1 all hatcheries always contribute.
+
+**EconomyManager** (`EconomyManager.galaxy`)
+- Includes all three race files. Single dispatcher; 8-second loop.
+- Wired into `PeregrineLogic.galaxy` via `EconomyManager_Init()` call in `Peregrine_OnAdvantageFinished`.
+- `EconomyManager_TickPlayer(player, race)` can also be called directly for on-demand triggers.
+
+---
+
+## What's Missing / TODO
+
+### High priority
+
+| Item | Notes |
+|---|---|
+| **Harvest_Gather abilcmd** | String used in Terran/Protoss gather orders. If workers sit idle in-game, this string is wrong -- check first. |
+| **Roster enforcement** | `g_roster_p1Units[]` stored but never consulted. Players can build any unit. Needs unit-creation event trigger or production gate. |
+| **Tidal Cycle gameplay effects** | Cycle is cosmetic. Needs phase-change callback in `DayNightCycle_Loop()` and per-phase buff/debuff per favored race. |
+| **Tidal Cycle phase duration** | 10s is debug. Change `PhaseDuration` in `GameData.xml` to 120-180s for real play. |
+
+### Medium priority
+
+| Item | Notes |
+|---|---|
+| **Zerg creep colony chain** | v1 is unconditional income from all hatcheries. Full design: chain of Creep Colonies, income only flows through unbroken path to Hive; cut link severs far-side income; reconnect gives burst from buffered resources. See `design/economy-design.md`. |
+| **Pylon-warp for Protoss probes** | On probe production, teleport to nearest Pylon before issuing anchor order. |
+| **Terran gas saturation** | Auto-assign 3 SCVs per Refinery. Only mineral side is automated now. |
+| **Commander unit types** | No commander unit type defined in XML. `HUD_GetActiveCommanderSlot()` is a stub. Whole commander/squad system waits on this. |
+| **Economy panel live data** | `Bases: 1  Workers: -` is a placeholder. Needs real counts from polling loop. |
+| **Player-triggered economy** | All economy runs unconditionally. Design intent: player controls expansion timing, army comp, tech direction. Needs gating on HUD button state. |
+
+### Low priority / future
+
+| Item | Notes |
+|---|---|
+| **Commander / Squad system** | No squads, no stance execution, no command latency. General gameplay loop fully unimplemented beyond data structures and HUD buttons. |
+| **Agitation mechanic** | Units hate standing still -- not implemented. |
+| **Tidal Cycle assets** | `IconDay/Dusk/Night` fields in XML may point to empty strings. |
+| **Army Comp targeting** | `~ Army Comp` button cycles a label but no production ratio logic exists. |
+| **Expand logic** | `+ Expand Base` flags intent but no code finds or builds at the next expansion site. |
