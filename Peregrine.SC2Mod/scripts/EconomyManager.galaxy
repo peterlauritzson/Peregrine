@@ -57,6 +57,8 @@ void EconomyManager_Init(int p1, int p1Race, int p2, int p2Race) {
     g_eco_p2Race = p2Race;
 
     ExpansionSites_Init();
+    ExpansionSites_DebugMarkSites(p1);
+    if (p2 != p1) { ExpansionSites_DebugMarkSites(p2); }
 
     // Per-race one-time initialization
     if (p1Race == c_peregrine_raceTerran) { TerranEconomy_Init(p1); }

@@ -10,6 +10,9 @@ const fixed c_expandSiteMergeRadius    = 14.0;
 const fixed c_expandSiteGeyserRadius   = 16.0;
 const fixed c_expandSiteSnapRadius     = 22.0;
 const fixed c_expandSiteOccupiedRadius = 10.0;
+const fixed c_expandSiteTownHallStep   = 7.0;  // how far from mineral centroid a town hall sits
+const fixed c_expandSiteMineralScan    = 15.0; // radius to scan minerals when refining position
+const int   c_expandSiteRefineAngles   = 8;    // directions to try when finding open pocket
 
 bool g_expandSitesReady = false;
 int g_expandSiteCount = 0;
@@ -167,6 +170,102 @@ void ExpansionSites_CompactLikelySites() {
     }
 }
 
+//--------------------------------------------------------------------------------------------------
+// Refine cluster centroids toward where a town hall would actually be placed.
+//
+// Pass 1: if a real town hall unit already exists near the centroid (e.g. start locations),
+//         use its exact position -- no estimation needed.
+// Pass 2: otherwise, sample c_expandSiteRefineAngles candidate positions at
+//         c_expandSiteTownHallStep units from the centroid.  Score each candidate by its
+//         clearance from the nearest mineral patch.  The candidate with the most clearance
+//         is the open pocket behind the mineral arc -- where the town hall belongs.
+//         Falls back to the raw centroid if all candidates are impassable.
+//--------------------------------------------------------------------------------------------------
+void ExpansionSites_RefinePositions() {
+    int    siteIdx;
+    int    dirIdx;
+    int    i;
+    int    mCount;
+    int    nhCount;
+    int    stepAngle;
+    point  centroid;
+    point  candidate;
+    point  best;
+    unitgroup nearby;
+    unitgroup minerals;
+    unit   u;
+    fixed  heading;
+    fixed  d;
+    fixed  minDist;
+    fixed  bestScore;
+    bool   foundTownHall;
+
+    siteIdx = 0;
+    while (siteIdx < g_expandSiteCount) {
+        centroid = g_expandSitePos[siteIdx];
+
+        // --- Pass 1: snap to an existing town hall if one is present ---
+        nearby   = UnitGroup(null, c_playerAny,
+            RegionCircle(centroid, c_expandSiteOccupiedRadius),
+            UnitFilter(0, 0, 0, 0), 0);
+        nhCount  = UnitGroupCount(nearby, c_unitCountAll);
+        foundTownHall = false;
+        i = 1;
+        while (i <= nhCount) {
+            u = UnitGroupUnit(nearby, i);
+            if (ExpansionSites_IsTownHallType(UnitGetType(u))) {
+                g_expandSitePos[siteIdx] = UnitGetPosition(u);
+                foundTownHall = true;
+                i = nhCount + 1; // exit loop
+            } else {
+                i = i + 1;
+            }
+        }
+        if (foundTownHall) {
+            siteIdx = siteIdx + 1;
+            continue;
+        }
+
+        // --- Pass 2: find the open pocket farthest from the mineral line ---
+        minerals = UnitGroup(null, c_playerAny,
+            RegionCircle(centroid, c_expandSiteMineralScan),
+            UnitFilter(0, 0, 0, 0), 0);
+        mCount    = UnitGroupCount(minerals, c_unitCountAll);
+        bestScore = -1.0;
+        best      = centroid; // fallback: stay at centroid if all blocked
+        stepAngle = 360 / c_expandSiteRefineAngles;
+
+        dirIdx = 0;
+        while (dirIdx < c_expandSiteRefineAngles) {
+            heading   = IntToFixed(dirIdx * stepAngle);
+            candidate = PointWithOffsetPolar(centroid, c_expandSiteTownHallStep, heading);
+
+            if (PointPathingPassable(candidate)) {
+                // Score = distance from candidate to the nearest mineral patch.
+                // Higher score = more open space = better town hall location.
+                minDist = 99999.0;
+                i = 1;
+                while (i <= mCount) {
+                    u = UnitGroupUnit(minerals, i);
+                    if (ExpansionSites_IsMineralType(UnitGetType(u))) {
+                        d = DistanceBetweenPoints(candidate, UnitGetPosition(u));
+                        if (d < minDist) { minDist = d; }
+                    }
+                    i = i + 1;
+                }
+                if (minDist > bestScore) {
+                    bestScore = minDist;
+                    best      = candidate;
+                }
+            }
+            dirIdx = dirIdx + 1;
+        }
+
+        g_expandSitePos[siteIdx] = best;
+        siteIdx = siteIdx + 1;
+    }
+}
+
 void ExpansionSites_Init() {
     unitgroup units;
     unit u;
@@ -199,8 +298,27 @@ void ExpansionSites_Init() {
     }
 
     ExpansionSites_CompactLikelySites();
+    ExpansionSites_RefinePositions();
     g_expandSitesReady = true;
     Debug_Log("ExpansionSites: inferred " + IntToString(g_expandSiteCount) + " likely base sites.");
+}
+
+//--------------------------------------------------------------------------------------------------
+// Debug: place a BeaconExpand marker at every inferred base site.
+// Call once per player after Init(). Remove this call when sites look correct.
+//--------------------------------------------------------------------------------------------------
+void ExpansionSites_DebugMarkSites(int player) {
+    int i;
+    if (!g_expandSitesReady) { return; }
+    i = 0;
+    while (i < g_expandSiteCount) {
+        UnitCreate(1, "BeaconExpand", c_unitCreateIgnorePlacement, player,
+            g_expandSitePos[i], 270.0);
+        i = i + 1;
+    }
+    UIDisplayMessage(PlayerGroupSingle(player), c_messageAreaChat,
+        StringToText("ExpansionSites: " + IntToString(g_expandSiteCount)
+            + " base sites marked (beacons). Remove DebugMarkSites call when verified."));
 }
 
 point ExpansionSites_SnapTargetPoint(int player, point target) {
