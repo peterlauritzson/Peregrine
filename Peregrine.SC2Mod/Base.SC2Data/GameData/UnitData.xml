@@ -14,13 +14,30 @@
     ===================================================================== -->
     <CUnit id="PeregrineGhostBuilder">
         <EditorCategories value="ObjectFamily:Peregrine"/>
-        <Flags index="Selectable" value="0"/>
-        <Flags index="Targetable" value="0"/>
+        <FlagArray index="Unselectable" value="1"/>
+        <FlagArray index="Untargetable" value="1"/>
+        <FlagArray index="Invulnerable" value="1"/>
+        <FlagArray index="NoScore" value="1"/>
         <LifeArmor value="99"/>
         <ShieldArmor value="99"/>
-        <CollisionUnit value="0"/>
         <DeathRevealRadius value="0"/>
         <AbilArray Link="PeregrineGhostBuild_Refinery"/>
+    </CUnit>
+
+    <!-- Resource Highway: Hatchery parent guarantees creep generation from bare terrain.
+         Actor overrides to SpineCrawler model. Created via c_unitCreateIgnorePlacement. -->
+    <CUnit id="PeregrineResourceHighway" parent="Hatchery">
+        <EditorCategories value="ObjectFamily:Peregrine"/>
+        <FlagArray index="NoScore" value="1"/>
+        <Footprint value="Footprint2x2Contour"/>
+        <PlacementFootprint value="Footprint2x2"/>
+        <Radius value="1"/>
+        <SeparationRadius value="1"/>
+        <InnerRadius value="0.5"/>
+        <MinimapRadius value="0.75"/>
+        <LifeStart value="450"/>
+        <LifeMax value="450"/>
+        <LifeArmor value="1"/>
     </CUnit>
 
 </Catalog>

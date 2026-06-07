@@ -86,6 +86,181 @@ int g_hud_lblEco    = c_invalidDialogControlId;
 
 // Click trigger
 trigger g_hud_trigClick = null;
+trigger g_hud_trigMouse = null;
+trigger g_hud_trigLoop  = null;
+
+bool[16] g_hud_expandAwaitPoint;
+const int c_terranExpandCost = 400;
+
+// Forward declarations for cross-file Zerg economy calls.
+void ZergEconomy_QueueExpandTowardPoint(int player, point target);
+int ZergEconomy_ExpandStatus(int player);
+void ZergEconomy_CancelExpand(int player);
+void StrategicHUD_UpdateStatus(int player);
+
+//--------------------------------------------------------------------------------------------------
+// Helper: detect whether player is currently operating a Zerg economy package.
+//--------------------------------------------------------------------------------------------------
+bool StrategicHUD_IsZergPlayer(int player) {
+    unitgroup h;
+    unitgroup h2;
+    h  = UnitGroup("Hive", player, RegionEntireMap(), UnitFilter(0, 0, 0, 0), 0);
+    h2 = UnitGroup("Hatchery", player, RegionEntireMap(), UnitFilter(0, 0, 0, 0), 0);
+    return UnitGroupCount(h, c_unitCountAll) > 0 || UnitGroupCount(h2, c_unitCountAll) > 0;
+}
+
+//--------------------------------------------------------------------------------------------------
+// Helper: detect whether player is currently operating a Terran economy package.
+//--------------------------------------------------------------------------------------------------
+bool StrategicHUD_IsTerranPlayer(int player) {
+    unitgroup ccs;
+    unitgroup ocs;
+    unitgroup pfs;
+    ccs = UnitGroup("CommandCenter", player, RegionEntireMap(), UnitFilter(0, 0, 0, 0), 0);
+    ocs = UnitGroup("OrbitalCommand", player, RegionEntireMap(), UnitFilter(0, 0, 0, 0), 0);
+    pfs = UnitGroup("PlanetaryFortress", player, RegionEntireMap(), UnitFilter(0, 0, 0, 0), 0);
+    return UnitGroupCount(ccs, c_unitCountAll) > 0
+        || UnitGroupCount(ocs, c_unitCountAll) > 0
+        || UnitGroupCount(pfs, c_unitCountAll) > 0;
+}
+
+//--------------------------------------------------------------------------------------------------
+// First-pass Terran expand automation for testing:
+// place a Command Center near the selected target if affordable.
+//--------------------------------------------------------------------------------------------------
+bool StrategicHUD_TerranExpandAtTarget(int player, point target) {
+    point place;
+    point snapped;
+    int minerals;
+
+    snapped = ExpansionSites_SnapTargetPoint(player, target);
+    minerals = PlayerGetPropertyInt(player, c_playerPropMinerals);
+    if (minerals < c_terranExpandCost) {
+        UIDisplayMessage(PlayerGroupSingle(player), c_messageAreaChat,
+            StringToText("ECONOMY: Terran expand failed (need 400 minerals)."));
+        return false;
+    }
+
+    place = UnitTypePlacementFromPoint("CommandCenter", player, snapped, 6.0);
+    if (place == null) {
+        UIDisplayMessage(PlayerGroupSingle(player), c_messageAreaChat,
+            StringToText("ECONOMY: Terran expand failed (no valid placement near target)."));
+        return false;
+    }
+
+    UnitCreate(1, "CommandCenter", 0, player, place, 270.0);
+    PlayerModifyPropertyInt(player, c_playerPropMinerals, c_playerPropOperAdd, -c_terranExpandCost);
+    UIDisplayMessage(PlayerGroupSingle(player), c_messageAreaChat,
+        StringToText("ECONOMY: Terran Command Center expansion started."));
+    return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+// Helper: update right-side economy info panel for one player.
+//--------------------------------------------------------------------------------------------------
+void StrategicHUD_UpdateEcoInfo(int player) {
+    unitgroup bases;
+    int baseCount;
+    int s;
+    string sText;
+    string txt;
+
+    bases = UnitGroup(null, player, RegionEntireMap(), UnitFilter(0, 0, (1 << c_targetFilterStructure), 0), 0);
+    baseCount = 0;
+    baseCount = baseCount + UnitGroupCount(UnitGroup("CommandCenter", player, RegionEntireMap(), UnitFilter(0, 0, 0, 0), 0), c_unitCountAll);
+    baseCount = baseCount + UnitGroupCount(UnitGroup("OrbitalCommand", player, RegionEntireMap(), UnitFilter(0, 0, 0, 0), 0), c_unitCountAll);
+    baseCount = baseCount + UnitGroupCount(UnitGroup("PlanetaryFortress", player, RegionEntireMap(), UnitFilter(0, 0, 0, 0), 0), c_unitCountAll);
+    baseCount = baseCount + UnitGroupCount(UnitGroup("Nexus", player, RegionEntireMap(), UnitFilter(0, 0, 0, 0), 0), c_unitCountAll);
+    baseCount = baseCount + UnitGroupCount(UnitGroup("Hatchery", player, RegionEntireMap(), UnitFilter(0, 0, 0, 0), 0), c_unitCountAll);
+    baseCount = baseCount + UnitGroupCount(UnitGroup("Lair", player, RegionEntireMap(), UnitFilter(0, 0, 0, 0), 0), c_unitCountAll);
+    baseCount = baseCount + UnitGroupCount(UnitGroup("Hive", player, RegionEntireMap(), UnitFilter(0, 0, 0, 0), 0), c_unitCountAll);
+
+    if (StrategicHUD_IsZergPlayer(player)) {
+        s = ZergEconomy_ExpandStatus(player);
+        if (s == 1) { sText = "Active"; }
+        else if (s == 2) { sText = "Done"; }
+        else if (s == 0) { sText = "Idle"; }
+        else { sText = "Fail(" + IntToString(s) + ")"; }
+        if (g_hud_expandAwaitPoint[player]) {
+            sText = "Pick target...";
+        }
+        txt = "<c val=\"88FF88\">Bases: " + IntToString(baseCount) + "   Expand: " + sText
+            + "   " + g_hud_target[player] + "</c>";
+    } else {
+        txt = "<c val=\"88FF88\">Bases: " + IntToString(baseCount) + "   Workers: -</c>";
+    }
+
+    DialogControlSetPropertyAsText(g_hud_lblEco, c_triggerControlPropertyText, PlayerGroupSingle(player), StringToText(txt));
+}
+
+//--------------------------------------------------------------------------------------------------
+// Poll HUD secondary labels so testing state is visible.
+//--------------------------------------------------------------------------------------------------
+bool StrategicHUD_LoopTrigger(bool testConds, bool runActions) {
+    while (true) {
+        Wait(1.0, c_timeGame);
+        if (g_hud_p1 > 0) {
+            StrategicHUD_UpdateEcoInfo(g_hud_p1);
+            StrategicHUD_UpdateStatus(g_hud_p1);
+        }
+        if (g_hud_p2 > 0 && g_hud_p2 != g_hud_p1) {
+            StrategicHUD_UpdateEcoInfo(g_hud_p2);
+            StrategicHUD_UpdateStatus(g_hud_p2);
+        }
+    }
+    return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+// Mouse handler: if player is waiting for expansion target, consume next click as world point.
+// Left click commits; right click cancels.
+//--------------------------------------------------------------------------------------------------
+bool StrategicHUD_OnMouseClick(bool testConds, bool runActions) {
+    int player;
+    int button;
+    int tx;
+    int ty;
+    point target;
+
+    player = EventPlayer();
+    button = EventMouseClickedButton();
+
+    if (!g_hud_expandAwaitPoint[player]) { return true; }
+
+    if (button == c_mouseButtonRight) {
+        g_hud_expandAwaitPoint[player] = false;
+        g_hud_target[player] = "-";
+        if (StrategicHUD_IsZergPlayer(player)) {
+            ZergEconomy_CancelExpand(player);
+        }
+        UIDisplayMessage(PlayerGroupSingle(player), c_messageAreaChat,
+            StringToText("ECONOMY: Expand cancelled."));
+        StrategicHUD_UpdateStatus(player);
+        StrategicHUD_UpdateEcoInfo(player);
+        return true;
+    }
+
+    if (button != c_mouseButtonLeft) { return true; }
+
+    target = Point(EventMouseClickedPosXWorld(), EventMouseClickedPosYWorld());
+    tx = FixedToInt(PointGetX(target));
+    ty = FixedToInt(PointGetY(target));
+    g_hud_expandAwaitPoint[player] = false;
+    g_hud_target[player] = "Expand @ (" + IntToString(tx) + "," + IntToString(ty) + ")";
+
+    if (StrategicHUD_IsZergPlayer(player)) {
+        ZergEconomy_QueueExpandTowardPoint(player, target);
+    } else if (StrategicHUD_IsTerranPlayer(player)) {
+        StrategicHUD_TerranExpandAtTarget(player, target);
+    } else {
+        UIDisplayMessage(PlayerGroupSingle(player), c_messageAreaChat,
+            StringToText("ECONOMY: Expand target selected (race-specific automation pending)."));
+    }
+
+    StrategicHUD_UpdateStatus(player);
+    StrategicHUD_UpdateEcoInfo(player);
+    return true;
+}
 
 //--------------------------------------------------------------------------------------------------
 // Commander: Register a new commander unit for a player.
@@ -350,7 +525,9 @@ bool StrategicHUD_OnPanelClick(bool testConds, bool runActions) {
 
     // -- Economy --
     else if (control == g_hud_btnExpand) {
-        msg = "<c val=\"88FF88\">ECONOMY: Expand (not yet wired)</c>";
+        g_hud_expandAwaitPoint[player] = true;
+        g_hud_target[player] = "Pick target...";
+        msg = "<c val=\"88FF88\">ECONOMY: Expand -- left-click world to set target (right-click cancel)</c>";
     }
     else if (control == g_hud_btnArmyComp) {
         msg = "<c val=\"88FF88\">ECONOMY: Army Comp (not yet wired)</c>";
@@ -361,6 +538,7 @@ bool StrategicHUD_OnPanelClick(bool testConds, bool runActions) {
 
     StrategicHUD_UpdateStanceButtons(player);
     StrategicHUD_UpdateStatus(player);
+    StrategicHUD_UpdateEcoInfo(player);
 
     if (msg != "") {
         UIDisplayMessage(PlayerGroupSingle(player), c_messageAreaChat, StringToText(msg));
@@ -530,6 +708,7 @@ void StrategicHUD_Init(int p1, int p2) {
         g_hud_stance[i]    = c_stance_None;
         g_hud_threshold[i] = c_threshold_Mid;
         g_hud_target[i]    = "-";
+        g_hud_expandAwaitPoint[i] = false;
         g_cmd_count[i]     = 0;
         i = i + 1;
     }
@@ -558,10 +737,12 @@ void StrategicHUD_Init(int p1, int p2) {
     StrategicHUD_UpdateStatus(p1);
     StrategicHUD_UpdateStanceButtons(p1);
     StrategicHUD_UpdateThresholdButton(p1);
+    StrategicHUD_UpdateEcoInfo(p1);
     if (p2 != p1) {
         StrategicHUD_UpdateStatus(p2);
         StrategicHUD_UpdateStanceButtons(p2);
         StrategicHUD_UpdateThresholdButton(p2);
+        StrategicHUD_UpdateEcoInfo(p2);
     }
 
     // Register click handlers
@@ -577,6 +758,15 @@ void StrategicHUD_Init(int p1, int p2) {
     TriggerAddEventDialogControl(g_hud_trigClick, c_playerAny, g_hud_btnExpand,      c_triggerControlEventTypeClick);
     TriggerAddEventDialogControl(g_hud_trigClick, c_playerAny, g_hud_btnArmyComp,    c_triggerControlEventTypeClick);
     TriggerAddEventDialogControl(g_hud_trigClick, c_playerAny, g_hud_btnTechUp,      c_triggerControlEventTypeClick);
+
+    // Mouse target capture for expansion placement
+    g_hud_trigMouse = TriggerCreate("StrategicHUD_OnMouseClick");
+    TriggerAddEventMouseClicked(g_hud_trigMouse, c_playerAny, c_mouseButtonLeft,  true);
+    TriggerAddEventMouseClicked(g_hud_trigMouse, c_playerAny, c_mouseButtonRight, true);
+
+    // Light polling for UI status labels
+    g_hud_trigLoop = TriggerCreate("StrategicHUD_LoopTrigger");
+    TriggerExecute(g_hud_trigLoop, false, false);
 
     Debug_Log("StrategicHUD initialized.");
 }

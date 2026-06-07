@@ -44,8 +44,7 @@ void ZoneAdvantage_ScanPlayer(int player, string race, string aura) {
         ZoneAdvantage_ScanType("Hatchery",           player, aura);
         ZoneAdvantage_ScanType("Lair",               player, aura);
         ZoneAdvantage_ScanType("Hive",               player, aura);
-        ZoneAdvantage_ScanType("CreepTumor",         player, aura);
-        ZoneAdvantage_ScanType("CreepTumorBurrowed", player, aura);
+        ZoneAdvantage_ScanType("PeregrineResourceHighway", player, aura);
     } else if (race == "Protoss") {
         ZoneAdvantage_ScanType("Pylon", player, aura);
     } else if (race == "Terran") {

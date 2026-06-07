@@ -1,6 +1,6 @@
 ﻿# Peregrine -- Current State
 
-Last updated: June 6, 2026
+Last updated: June 7, 2026 (session 2)
 
 ---
 
@@ -54,10 +54,14 @@ Persistent overlay UI with three panels.
 - ORDERS section: Attack Zone / Reinforce Zone / Fall Back / Retreat threshold (cycles Never/20%/40%/60%)
 - ECONOMY section: + Expand Base / ~ Army Comp / ^ Tech Tier Up
 - All buttons write to either the active commander slot OR global player state.
-- All buttons print `(not yet wired)` -- no gameplay automation yet.
+- Stance/order buttons still print `(not yet wired)`.
+- `+ Expand Base` is now wired for target selection: left-click world to set target, right-click to cancel.
+- For Zerg players, target selection queues directed corridor expansion in `ZergEconomy_QueueExpandTowardPoint()`.
 
 **3. Economy Info Panel** (right, below command panel)
-- Placeholder label `Bases: 1  Workers: -`.
+- Live test info updates every second.
+- Shows base count for all races.
+- For Zerg, shows expansion planner state (`Idle`, `Active`, `Done`, or `Fail(code)`).
 
 **Commander slot architecture** (data live, behavior stubbed)
 - Up to 8 commander slots per player, indexed `player * 8 + slot`.
@@ -77,9 +81,10 @@ Prevents all mineral and gas sources from ever depleting.
 Fully automated economy, always running. 8-second tick dispatches to race-specific handler.
 
 **Terran** (`TerranEconomy.galaxy`)
-- `TerranEconomy_TrainWorkers` -- queues SCVs from idle CC/OC/PF when below 16 workers in radius.
-- `TerranEconomy_AssignIdleWorkers` -- issues harvest order to orderless SCVs toward nearest mineral patch.
-- Gas saturation and smart base transfer are TODO.
+- `PeregrineAutoTrain_SCV` behavior on CC/OC/PF auto-trains SCVs via data (validator-gated at <16 local workers).
+- `TerranEconomy_OnSCVCreated` immediately issues `Harvest_Gather` to the nearest mineral patch when a new SCV is created.
+- `TerranEconomy_BuildRefineries` periodically scans geysers near each town hall and orders a hidden `PeregrineGhostBuilder` to build missing Refineries.
+- Gas-worker saturation and smart base transfer are still TODO.
 
 **Protoss** (`ProtossEconomy.galaxy`)
 - `ProtossEconomy_TrainProbes` -- produces probes from idle Nexus when unanchored patches exist and no idle probes are waiting.
@@ -88,9 +93,30 @@ Fully automated economy, always running. 8-second tick dispatches to race-specif
 
 **Zerg** (`ZergEconomy.galaxy`)
 - No workers. Income injected directly per tick.
-- `ZergEconomy_MineralIncome` -- minerals proportional to patches within range of Hatchery/Lair/Hive.
-- `ZergEconomy_GasIncome` -- gas per owned Extractor.
-- Creep colony chain connectivity check is TODO; v1 all hatcheries always contribute.
+- Hive is enforced as sink:
+	- startup bootstrap converts one Hatchery to Hive if needed,
+	- Hive morph attempts are blocked for managed players.
+- Larva output is suppressed for managed Zerg players.
+- Connectivity system is implemented:
+	- behavior markers `Connected/Disconnected` + step markers,
+	- one-edge propagation pulses from Hive every 0.25s,
+	- income only flows through connected colony nodes.
+- Resource pairing is implemented:
+	- each mineral patch pairs to one nearest Hatchery,
+	- each Extractor pairs to one nearest Hatchery,
+	- contribution occurs only if that paired colony is connected.
+- Directed corridor expansion planner is implemented and working:
+	- `FindAnchorToward` uses explicit per-type queries (`"Hive"`, `"Lair"`, `"Hatchery"`, `c_zergColonyUnitType`) — custom unit types are never missed.
+	- Anchor selection correctly extends from the **nearest existing highway**, not always from the Hive.
+	- `TryPlaceExpansionColony` places with `c_unitCreateIgnorePlacement` so SC2 footprint snapping cannot relocate nodes.
+	- Completion condition: nearest anchor is within `c_zergExpandTargetReach` (9 units) of the base-site goal — corridor done.
+	- No premature jump-to-goal: stepping continues normally at `c_zergExpandStepDistance` (14 units) per tick until arrival.
+	- Failure states: FailNoAnchor, FailBlocked (8 fails), FailBudget (40 builds max).
+	- Queue API: `ZergEconomy_QueueExpandTowardPoint(player, point)` — snaps beacon click to nearest inferred base site via `ExpansionSites_SnapTargetPoint`.
+- `PeregrineResourceHighway` unit:
+	- `parent="Hatchery"` — generates creep from bare terrain without needing adjacent existing creep.
+	- `Footprint value="Footprint2x2Contour"`, `PlacementFootprint value="Footprint2x2"` — small footprint, no placement restriction.
+	- Created with `c_unitCreateIgnorePlacement` so it can be placed anywhere passable.
 
 **EconomyManager** (`EconomyManager.galaxy`)
 - Includes all three race files. Single dispatcher; 8-second loop.
@@ -114,12 +140,12 @@ Fully automated economy, always running. 8-second tick dispatches to race-specif
 
 | Item | Notes |
 |---|---|
-| **Zerg creep colony chain** | v1 is unconditional income from all hatcheries. Full design: chain of Creep Colonies, income only flows through unbroken path to Hive; cut link severs far-side income; reconnect gives burst from buffered resources. See `design/economy-design.md`. |
+| **Zerg colony buffering/transfer model** | Connectivity + directed expansion are implemented. Missing: explicit per-node buffer storage, transfer-rate caps, and death-drop payout based on stored buffer. See `design/economy-design.md`. |
 | **Pylon-warp for Protoss probes** | On probe production, teleport to nearest Pylon before issuing anchor order. |
 | **Terran gas saturation** | Auto-assign 3 SCVs per Refinery. Only mineral side is automated now. |
 | **Commander unit types** | No commander unit type defined in XML. `HUD_GetActiveCommanderSlot()` is a stub. Whole commander/squad system waits on this. |
-| **Economy panel live data** | `Bases: 1  Workers: -` is a placeholder. Needs real counts from polling loop. |
-| **Player-triggered economy** | All economy runs unconditionally. Design intent: player controls expansion timing, army comp, tech direction. Needs gating on HUD button state. |
+| **Economy panel live data depth** | Panel now shows live base count + Zerg planner status. Still missing broader economy telemetry (income rates, saturation, per-race detail). |
+| **Player-triggered economy (non-Zerg)** | Zerg expansion trigger path is wired via HUD + click-targeting. Protoss/Terran economy direction controls remain unwired. |
 
 ### Low priority / future
 
@@ -129,4 +155,4 @@ Fully automated economy, always running. 8-second tick dispatches to race-specif
 | **Agitation mechanic** | Units hate standing still -- not implemented. |
 | **Tidal Cycle assets** | `IconDay/Dusk/Night` fields in XML may point to empty strings. |
 | **Army Comp targeting** | `~ Army Comp` button cycles a label but no production ratio logic exists. |
-| **Expand logic** | `+ Expand Base` flags intent but no code finds or builds at the next expansion site. |
+| **Expand logic (non-Zerg)** | Zerg directed expansion is implemented. Terran/Protoss expand automation via HUD is still pending. |

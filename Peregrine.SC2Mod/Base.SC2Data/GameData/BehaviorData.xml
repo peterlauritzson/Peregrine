@@ -199,4 +199,37 @@
         </Modification>
     </CBehaviorBuff>
 
+    <!-- =====================================================================
+         PEREGRINE: ZERG COLONY CONNECTIVITY MARKERS
+         Refreshed by ZergEconomy.galaxy once per connectivity pulse.
+         Duration 1.2s > pulse 1.0s so valid states stay latched between pulses.
+    ===================================================================== -->
+    <CBehaviorBuff id="PeregrineCreepNode_Connected">
+        <InfoFlags index="Hidden" value="1"/>
+        <Alignment value="Positive"/>
+        <Duration value="1.2"/>
+        <MaxStackCount value="1"/>
+    </CBehaviorBuff>
+
+    <CBehaviorBuff id="PeregrineCreepNode_Disconnected">
+        <InfoFlags index="Hidden" value="1"/>
+        <Alignment value="Negative"/>
+        <Duration value="1.2"/>
+        <MaxStackCount value="1"/>
+    </CBehaviorBuff>
+
+    <CBehaviorBuff id="PeregrineCreepNode_Step0"><InfoFlags index="Hidden" value="1"/><Duration value="1.2"/><MaxStackCount value="1"/></CBehaviorBuff>
+    <CBehaviorBuff id="PeregrineCreepNode_Step1"><InfoFlags index="Hidden" value="1"/><Duration value="1.2"/><MaxStackCount value="1"/></CBehaviorBuff>
+    <CBehaviorBuff id="PeregrineCreepNode_Step2"><InfoFlags index="Hidden" value="1"/><Duration value="1.2"/><MaxStackCount value="1"/></CBehaviorBuff>
+    <CBehaviorBuff id="PeregrineCreepNode_Step3"><InfoFlags index="Hidden" value="1"/><Duration value="1.2"/><MaxStackCount value="1"/></CBehaviorBuff>
+    <CBehaviorBuff id="PeregrineCreepNode_Step4"><InfoFlags index="Hidden" value="1"/><Duration value="1.2"/><MaxStackCount value="1"/></CBehaviorBuff>
+    <CBehaviorBuff id="PeregrineCreepNode_Step5"><InfoFlags index="Hidden" value="1"/><Duration value="1.2"/><MaxStackCount value="1"/></CBehaviorBuff>
+    <CBehaviorBuff id="PeregrineCreepNode_Step6"><InfoFlags index="Hidden" value="1"/><Duration value="1.2"/><MaxStackCount value="1"/></CBehaviorBuff>
+    <CBehaviorBuff id="PeregrineCreepNode_Step7"><InfoFlags index="Hidden" value="1"/><Duration value="1.2"/><MaxStackCount value="1"/></CBehaviorBuff>
+    <CBehaviorBuff id="PeregrineCreepNode_Step8"><InfoFlags index="Hidden" value="1"/><Duration value="1.2"/><MaxStackCount value="1"/></CBehaviorBuff>
+    <CBehaviorBuff id="PeregrineCreepNode_Step9"><InfoFlags index="Hidden" value="1"/><Duration value="1.2"/><MaxStackCount value="1"/></CBehaviorBuff>
+    <CBehaviorBuff id="PeregrineCreepNode_Step10"><InfoFlags index="Hidden" value="1"/><Duration value="1.2"/><MaxStackCount value="1"/></CBehaviorBuff>
+    <CBehaviorBuff id="PeregrineCreepNode_Step11"><InfoFlags index="Hidden" value="1"/><Duration value="1.2"/><MaxStackCount value="1"/></CBehaviorBuff>
+    <CBehaviorBuff id="PeregrineCreepNode_Step12"><InfoFlags index="Hidden" value="1"/><Duration value="1.2"/><MaxStackCount value="1"/></CBehaviorBuff>
+
 </Catalog>

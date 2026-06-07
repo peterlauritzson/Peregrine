@@ -29,6 +29,9 @@ int g_draft_btnTerran = c_invalidDialogControlId;
 int g_draft_btnProtoss = c_invalidDialogControlId;
 int g_draft_btnZerg = c_invalidDialogControlId;
 int g_draft_btnAutoRun = c_invalidDialogControlId;
+int g_draft_btnAutoTerran = c_invalidDialogControlId;
+int g_draft_btnAutoProtoss = c_invalidDialogControlId;
+int g_draft_btnAutoZerg = c_invalidDialogControlId;
 
 //--------------------------------------------------------------------------------------------------
 // Helper: Get Race Config ID
@@ -99,6 +102,7 @@ void SetPlayerRace(int player, int race) {
     string townHallType;
     string workerType;
     string extraUnitType;
+    bool skipStartPack;
     int i;
     int workerCount = GetRaceStartConfigInt(race, "WorkerCount");
     int minerals = GetRaceStartConfigInt(race, "Minerals");
@@ -110,6 +114,7 @@ void SetPlayerRace(int player, int race) {
     townHallType = GetRaceUnitType(race, "TownHall");
     workerType = GetRaceUnitType(race, "Worker");
     extraUnitType = GetRaceUnitType(race, "ExtraUnit");
+    skipStartPack = (race == c_peregrine_raceZerg);
 
     // 2. Find Start Location (where the current Town Hall is)
     existingUnits = UnitGroup(null, player, RegionEntireMap(), UnitFilter(0, 0, (1 << c_targetFilterMissile), (1 << (c_targetFilterDead - 32)) | (1 << (c_targetFilterHidden - 32))), 0);
@@ -135,12 +140,16 @@ void SetPlayerRace(int player, int race) {
     UnitGroupLoopEnd();
 
     // 4. Spawn New Units
-    libNtve_gf_CreateUnitsWithDefaultFacing(1, townHallType, 0, player, startLoc);
-    libNtve_gf_CreateUnitsWithDefaultFacing(workerCount, workerType, 0, player, startLoc);
-    
-    // Spawn Extra Unit (e.g. Overlord) if defined
-    if (extraUnitType != "") {
-        libNtve_gf_CreateUnitsWithDefaultFacing(1, extraUnitType, 0, player, startLoc);
+    // Zerg startpack is intentionally skipped; Peregrine_StartGame performs a
+    // deterministic Hive-only setup directly at the start location.
+    if (!skipStartPack) {
+        libNtve_gf_CreateUnitsWithDefaultFacing(1, townHallType, 0, player, startLoc);
+        libNtve_gf_CreateUnitsWithDefaultFacing(workerCount, workerType, 0, player, startLoc);
+
+        // Spawn Extra Unit (e.g. Overlord) if defined
+        if (extraUnitType != "") {
+            libNtve_gf_CreateUnitsWithDefaultFacing(1, extraUnitType, 0, player, startLoc);
+        }
     }
 
     // 5. Set Resources (Standard Melee Start)
@@ -305,6 +314,17 @@ bool RaceDraft_OnClicked(bool testConds, bool runActions) {
     else if (control == g_draft_btnZerg) { selectedRace = c_peregrine_raceZerg; }
 
     if (control == g_draft_btnAutoRun) {
+        Debug_SetForcedRace(0);
+        if (g_debug_autoRunTrigger != null) {
+            TriggerExecute(g_debug_autoRunTrigger, false, false);
+        }
+        return true;
+    }
+
+    if (control == g_draft_btnAutoTerran || control == g_draft_btnAutoProtoss || control == g_draft_btnAutoZerg) {
+        if (control == g_draft_btnAutoTerran) { Debug_SetForcedRace(c_peregrine_raceTerran); }
+        if (control == g_draft_btnAutoProtoss) { Debug_SetForcedRace(c_peregrine_raceProtoss); }
+        if (control == g_draft_btnAutoZerg) { Debug_SetForcedRace(c_peregrine_raceZerg); }
         if (g_debug_autoRunTrigger != null) {
             TriggerExecute(g_debug_autoRunTrigger, false, false);
         }
@@ -438,7 +458,7 @@ void RaceDraft_Start(trigger callback) {
     RemoveWorkers();
 
     // Create UI
-    g_draft_dialog = DialogCreate(500, 400, c_anchorCenter, 0, 0, true);
+    g_draft_dialog = DialogCreate(500, 500, c_anchorCenter, 0, 0, true);
     DialogSetTitle(g_draft_dialog, StringToText("Peregrine Draft"));
     DialogSetVisible(g_draft_dialog, PlayerGroupAll(), true);
 
@@ -470,6 +490,21 @@ void RaceDraft_Start(trigger callback) {
         DialogControlSetSize(g_draft_btnAutoRun, PlayerGroupAll(), 200, 30);
         DialogControlSetPosition(g_draft_btnAutoRun, PlayerGroupAll(), c_anchorTop, 0, 340);
         DialogControlSetPropertyAsText(g_draft_btnAutoRun, c_triggerControlPropertyText, PlayerGroupAll(), StringToText("[ DEBUG: Random All ]"));
+
+        g_draft_btnAutoTerran = DialogControlCreate(g_draft_dialog, c_triggerControlTypeButton);
+        DialogControlSetSize(g_draft_btnAutoTerran, PlayerGroupAll(), 200, 28);
+        DialogControlSetPosition(g_draft_btnAutoTerran, PlayerGroupAll(), c_anchorTop, 0, 374);
+        DialogControlSetPropertyAsText(g_draft_btnAutoTerran, c_triggerControlPropertyText, PlayerGroupAll(), StringToText("[ DEBUG: Auto As Terran ]"));
+
+        g_draft_btnAutoProtoss = DialogControlCreate(g_draft_dialog, c_triggerControlTypeButton);
+        DialogControlSetSize(g_draft_btnAutoProtoss, PlayerGroupAll(), 200, 28);
+        DialogControlSetPosition(g_draft_btnAutoProtoss, PlayerGroupAll(), c_anchorTop, 0, 406);
+        DialogControlSetPropertyAsText(g_draft_btnAutoProtoss, c_triggerControlPropertyText, PlayerGroupAll(), StringToText("[ DEBUG: Auto As Protoss ]"));
+
+        g_draft_btnAutoZerg = DialogControlCreate(g_draft_dialog, c_triggerControlTypeButton);
+        DialogControlSetSize(g_draft_btnAutoZerg, PlayerGroupAll(), 200, 28);
+        DialogControlSetPosition(g_draft_btnAutoZerg, PlayerGroupAll(), c_anchorTop, 0, 438);
+        DialogControlSetPropertyAsText(g_draft_btnAutoZerg, c_triggerControlPropertyText, PlayerGroupAll(), StringToText("[ DEBUG: Auto As Zerg ]"));
     }
 
     // Register Trigger
@@ -479,6 +514,15 @@ void RaceDraft_Start(trigger callback) {
     TriggerAddEventDialogControl(g_draft_trigger, c_playerAny, g_draft_btnZerg, c_triggerControlEventTypeClick);
     if (g_debugLevel > c_debug_None && g_draft_btnAutoRun != c_invalidDialogControlId) {
         TriggerAddEventDialogControl(g_draft_trigger, c_playerAny, g_draft_btnAutoRun, c_triggerControlEventTypeClick);
+        if (g_draft_btnAutoTerran != c_invalidDialogControlId) {
+            TriggerAddEventDialogControl(g_draft_trigger, c_playerAny, g_draft_btnAutoTerran, c_triggerControlEventTypeClick);
+        }
+        if (g_draft_btnAutoProtoss != c_invalidDialogControlId) {
+            TriggerAddEventDialogControl(g_draft_trigger, c_playerAny, g_draft_btnAutoProtoss, c_triggerControlEventTypeClick);
+        }
+        if (g_draft_btnAutoZerg != c_invalidDialogControlId) {
+            TriggerAddEventDialogControl(g_draft_trigger, c_playerAny, g_draft_btnAutoZerg, c_triggerControlEventTypeClick);
+        }
     }
 
     // Start

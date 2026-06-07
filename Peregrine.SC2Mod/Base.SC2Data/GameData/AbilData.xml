@@ -9,7 +9,12 @@
     ===================================================================== -->
     <CAbilBuild id="PeregrineGhostBuild_Refinery">
         <Range value="500"/>
-        <BuildArray Unit="Refinery" Time="30"/>
+        <InfoArray index="Build1" Unit="Refinery" Time="30"/>
+    </CAbilBuild>
+
+    <!-- Colony node pacing: Resource Highway is the dedicated node chassis -->
+    <CAbilBuild id="DroneBuild">
+        <InfoArray index="Build1" Unit="Hatchery" Time="60"/>
     </CAbilBuild>
 
 </Catalog>

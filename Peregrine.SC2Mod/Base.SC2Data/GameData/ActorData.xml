@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Catalog>
+    <!-- Explicit actor mapping prevents fallback sphere visuals for the custom unit. -->
+    <CActorUnit id="PeregrineResourceHighway" parent="GenericUnitStandard" unitName="PeregrineResourceHighway">
+        <Model value="SpineCrawler"/>
+        <BuildModel value="SpineCrawler"/>
+        <PlaceholderActorModel value=""/>
+    </CActorUnit>
+</Catalog>
