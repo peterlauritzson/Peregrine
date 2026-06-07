@@ -1,6 +1,6 @@
 ﻿# Peregrine -- Current State
 
-Last updated: June 7, 2026 (session 2)
+Last updated: June 7, 2026 (session 3)
 
 ---
 
@@ -97,26 +97,44 @@ Fully automated economy, always running. 8-second tick dispatches to race-specif
 	- startup bootstrap converts one Hatchery to Hive if needed,
 	- Hive morph attempts are blocked for managed players.
 - Larva output is suppressed for managed Zerg players.
-- Connectivity system is implemented:
-	- behavior markers `Connected/Disconnected` + step markers,
-	- one-edge propagation pulses from Hive every 0.25s,
-	- income only flows through connected colony nodes.
-- Resource pairing is implemented:
-	- each mineral patch pairs to one nearest Hatchery,
-	- each Extractor pairs to one nearest Hatchery,
-	- contribution occurs only if that paired colony is connected.
-- Directed corridor expansion planner is implemented and working:
-	- `FindAnchorToward` uses explicit per-type queries (`"Hive"`, `"Lair"`, `"Hatchery"`, `c_zergColonyUnitType`) — custom unit types are never missed.
-	- Anchor selection correctly extends from the **nearest existing highway**, not always from the Hive.
-	- `TryPlaceExpansionColony` places with `c_unitCreateIgnorePlacement` so SC2 footprint snapping cannot relocate nodes.
-	- Completion condition: nearest anchor is within `c_zergExpandTargetReach` (9 units) of the base-site goal — corridor done.
-	- No premature jump-to-goal: stepping continues normally at `c_zergExpandStepDistance` (14 units) per tick until arrival.
-	- Failure states: FailNoAnchor, FailBlocked (8 fails), FailBudget (40 builds max).
-	- Queue API: `ZergEconomy_QueueExpandTowardPoint(player, point)` — snaps beacon click to nearest inferred base site via `ExpansionSites_SnapTargetPoint`.
-- `PeregrineResourceHighway` unit:
-	- `parent="Hatchery"` — generates creep from bare terrain without needing adjacent existing creep.
-	- `Footprint value="Footprint2x2Contour"`, `PlacementFootprint value="Footprint2x2"` — small footprint, no placement restriction.
-	- Created with `c_unitCreateIgnorePlacement` so it can be placed anywhere passable.
+
+**Structure roles (split):**
+- `PeregrineResourceHighway` = **pipeline only**. Propagates connectivity step markers outward from the Hive. Does NOT mine.
+- `Hatchery` / `Lair` = **mining nodes**. Inject mineral/gas income from patches within radius, but only if connected to the pipeline.
+- `Hive` = **sink + miner**. Always mines its local radius unconditionally; is the graph root (step 0).
+
+**Connectivity system:**
+- Behavior markers `Connected/Disconnected` + `PeregrineCreepNode_Step0..12` on highway nodes.
+- Propagation pulse every 0.25s: Hive/Lair always step 0; highways earn their step through the plan/apply pass.
+- Highways display green (connected) or red (disconnected) team color.
+
+**Income model:**
+- Hive: mines all patches within `c_zergSinkHarvestRadius` unconditionally each tick.
+- Hatchery/Lair: mines their local patch radius only if a connected highway or the Hive is within `c_zergNodeLinkRadius` (15 units).
+- Hive passive floor income injected each tick regardless of network state.
+- Gas income: same connectivity gate, scans Extractors near each mining building.
+
+**Visual feedback:**
+- Mineral/geyser patches claimed by an active mining building glow with `NeuralParasiteEffect` (purple tendrils). Refreshed every economy tick. Dark = unclaimed or disconnected.
+
+**Inferred base sites** (`ExpansionSites.galaxy`):
+- Startup scan clusters mineral patches and geysers into likely base locations.
+- `RefinePositions` pass: if a real town hall is present → snap to its exact position. Otherwise try 8 directions at 7 units from the centroid and pick the candidate with most clearance from the mineral line (the open "town-hall pocket").
+- `DebugMarkSites`: places a `BeaconExpand` marker at every inferred site on game start for visual verification. **Remove this call once sites look correct.**
+
+**Directed corridor expansion planner:**
+- `FindAnchorToward`: explicit per-type queries (`"Hive"`, `"Lair"`, `"Hatchery"`, `PeregrineResourceHighway`) — nearest structure of any type wins. Highways are always considered, never skipped.
+- `TryPlaceExpansionColony` rules:
+	1. **Never block a base site**: highway candidates within `c_zergExpandBaseBlockRadius` (7 units) of an inferred site are skipped.
+	2. **Auto-colonise**: after placing a highway, any open inferred base site within `c_zergHatcherySnapRadius` (14 units) automatically gets a Hatchery.
+	3. **Completion**: once the nearest anchor is within `c_zergExpandTargetReach` (9 units) of goal AND a Hatchery exists there → Done. Fallback: if Hatchery not yet placed, try directly (waiting for minerals if needed).
+- All placement uses `c_unitCreateIgnorePlacement`; no SC2 footprint snapping.
+- Failure states: `FailNoAnchor`, `FailBlocked` (8 fails), `FailBudget` (40 builds).
+- Queue API: `ZergEconomy_QueueExpandTowardPoint(player, point)` — snaps click to nearest inferred base site.
+
+**`PeregrineResourceHighway` unit data:**
+- `parent="Hatchery"` — generates creep from bare terrain.
+- `Footprint = Footprint2x2Contour`, `PlacementFootprint = Footprint2x2` — small, unrestricted.
 
 **EconomyManager** (`EconomyManager.galaxy`)
 - Includes all three race files. Single dispatcher; 8-second loop.

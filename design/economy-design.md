@@ -1,6 +1,6 @@
 # Peregrine -- Economy Design
 
-Last updated: June 7, 2026 (session 2)
+Last updated: June 7, 2026 (session 3)
 
 ---
 
@@ -46,11 +46,12 @@ Probes are placed at mineral patches as permanent stationary anchors. Once place
 A chain of Resource Highways extends from the main Hive outward across the map. Each highway node auto-mines minerals and gas within its radius. Resources only flow back to the Hive through an **unbroken chain** of connected nodes.
 
 ### Structure roles (locked for implementation planning)
-- **Hive is the only economy sink.** All node transfer routes terminate at Hive.
+- **Hive is the only economy sink.** All node transfer routes terminate at Hive. Hive also mines its own local radius unconditionally — the pipeline does not need to reach back to itself.
 - **Zerg starts with a Hive** (spawn/setup details deferred; to be wired later).
 - **No Lair -> Hive upgrade path** (to be disabled in data when the race package is finalized).
-- **Resource Highway is the dedicated node chassis.** It is a custom Zerg economy structure (separate from normal combat/economy buildings).
-- **Working direction:** Resource Highways stay visible and spread creep in a compact footprint while acting as pipeline nodes.
+- **Resource Highway = pipeline node only.** Does not mine. Propagates connectivity outward from the Hive. Compact creep footprint (2x2), placed anywhere passable with `c_unitCreateIgnorePlacement`.
+- **Hatchery / Lair = mining node.** Injects mineral/gas income from patches within its harvest radius, but only when the pipeline reaches it (a connected Highway or the Hive itself is within link range).
+- **Working direction:** Resource Highways spread creep and mark pipeline depth. Hatcheries sit at base sites and mine. The player sees a clear visual language: highways = veins, Hatcheries = organs.
 
 ### Node behavior
 Each node has:
@@ -73,31 +74,37 @@ With a single guaranteed sink, all connectivity checks reduce to: "is this node 
 ### Directed corridor expansion planner (v1)
 - Player intent is directional ("expand toward X"); colony placement is automated.
 - Planner runs in bounded steps (no global optimality requirement).
-- Each step picks the best connected frontier node (Hive or connected highway node) toward target.
-- Candidate placements are sampled in a forward cone with side-detour angles.
-- Candidate validity checks: passable terrain, pathing-connected to anchor, spacing from existing nodes.
-- If no candidate is valid, failure count increases and heading bias rotates to search alternate detours.
-- Hard stop conditions: no Hive sink, no connected anchor, blocked after max failures, unreachable target, build budget exhausted.
-- Completion condition: connected frontier reaches target radius.
-- Fast connectivity propagation (one edge per pulse at high pulse rate) keeps the corridor responsive without explicit flush mechanics.
+- Each step picks the nearest frontier structure (Hive, Lair, Hatchery, or any Resource Highway) to the goal.
+- **Base-site protection rule**: highway candidates are rejected if they would land within 7 units of any inferred base site. Highways must never block where a Hatchery needs to go.
+- **Auto-colonise rule**: after placing a highway, any open inferred base site within one step distance (14 units) automatically receives a Hatchery. This fires both mid-corridor (passing by sites) and at the destination.
+- **Inferred base sites** are computed at startup by `ExpansionSites.galaxy`:
+	- Cluster mineral patches within 14 units of each other.
+	- Keep clusters with ≥6 patches or ≥4 patches + a geyser.
+	- Refine centroid to the "town-hall pocket": try 8 directions at 7 units, pick the candidate with most clearance from the nearest patch. If a real town hall exists nearby, snap to it directly.
+- Corridor completion: anchor within 9 units of goal AND a Hatchery present there → Done. Fallback: try to place Hatchery directly if mineral check passes.
+- Hard stop conditions: no Hive sink, no anchor, blocked after 8 fails, build budget (40) exhausted.
 
-### Current implementation snapshot (June 7, session 2)
+### Current implementation snapshot (June 7, session 3)
 - Implemented and working:
 	- Hive sink bootstrap + Hive morph blocking.
-	- Resource-Highway connectivity propagation with step markers.
-	- Connected-only mineral/gas income.
-	- One-to-one nearest pairing of mineral patches/extractors to colony nodes.
-	- **Directed corridor planner** — correct and tested:
-		- Anchor lookup queries each unit type explicitly (`"Hive"`, `"Lair"`, `"Hatchery"`, `PeregrineResourceHighway`) so the nearest structure of any relevant type is always found, including previously placed highways.
-		- Step placement uses `c_unitCreateIgnorePlacement` — SC2 footprint snapping is bypassed entirely.
-		- `PeregrineResourceHighway` parent is `Hatchery`: generates creep from bare terrain, 2x2 footprint, no placement restriction.
-		- Corridor terminates cleanly when the leading anchor reaches within 9 units of the goal (no early jump-to-goal).
-		- Goal is the inferred base site from `ExpansionSites_SnapTargetPoint`; beacon stays at raw click.
-	- HUD test path: `+ Expand Base` → world click → queue planner.
+	- Pipeline connectivity propagation: step markers on highways, 0.25s pulse. Hive/Lair are always step 0; highways earn their step through the plan/apply pass.
+	- **Role split**: Resource Highways = pipeline only. Hatcheries/Lairs = mining. Hive = unconditional mining + root.
+	- **Income model**: Hive mines unconditionally. Hatchery/Lair mines if a connected highway (or Hive) is within 15 units. Gas follows the same gate.
+	- **Expansion planner** (working and tested):
+		- Anchor = nearest Hive/Lair/Hatchery/Highway to goal (explicit per-type queries).
+		- Highways never placed on inferred base sites (7-unit block radius).
+		- Any open base site within 14 units of a placed highway auto-receives a Hatchery.
+		- Final completion: Hatchery at goal → Done (with mineral-wait fallback).
+		- `c_unitCreateIgnorePlacement` throughout — no footprint snapping.
+	- **Inferred base sites** (`ExpansionSites.galaxy`): mineral cluster + geyser heuristic, town-hall pocket refinement (8-direction scan for most clearance from mineral line), debug beacons on startup.
+	- **Mineral link visuals**: `NeuralParasiteEffect` behavior applied to all claimed patches every economy tick. Glowing = actively mined + pipeline connected. Dark = unclaimed or disconnected.
+	- **Pipeline depth visuals**: highways colored green (connected) or red (disconnected) via team color index.
+	- HUD wiring: `+ Expand Base` → world click → `ZergEconomy_QueueExpandTowardPoint`.
 - Deferred intentionally:
-	- Explicit per-node buffer accounting.
-	- Transfer-rate caps and stored-resource drop scaling.
+	- Explicit per-node buffer accounting (highway stores resources in transit).
+	- Transfer-rate caps and stored-resource death-drop.
 	- Non-Zerg expansion automation through the same HUD flow.
+	- Remove `ExpansionSites_DebugMarkSites` calls once base-site positions are verified.
 
 ### Harassment
 - Attack the chain at a bottleneck node to cut off everything beyond it
