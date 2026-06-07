@@ -321,6 +321,38 @@ void ExpansionSites_DebugMarkSites(int player) {
             + " base sites marked (beacons). Remove DebugMarkSites call when verified."));
 }
 
+//--------------------------------------------------------------------------------------------------
+// Returns the position of the nearest unoccupied inferred base site within radius of p,
+// or null if none exists.  Used by the expansion planner to detect mid-corridor base sites.
+//--------------------------------------------------------------------------------------------------
+point ExpansionSites_FindNearestUnoccupiedSite(point p, fixed radius) {
+    int i;
+    int bestIdx;
+    fixed d;
+    fixed bestD;
+
+    if (!g_expandSitesReady) { return null; }
+
+    i = 0;
+    bestIdx = -1;
+    bestD   = radius;
+    while (i < g_expandSiteCount) {
+        if (!ExpansionSites_IsOccupied(g_expandSitePos[i])) {
+            d = DistanceBetweenPoints(g_expandSitePos[i], p);
+            if (d <= bestD) {
+                bestD   = d;
+                bestIdx = i;
+            }
+        }
+        i = i + 1;
+    }
+
+    if (bestIdx >= 0) {
+        return g_expandSitePos[bestIdx];
+    }
+    return null;
+}
+
 point ExpansionSites_SnapTargetPoint(int player, point target) {
     int i;
     int bestIdx;
