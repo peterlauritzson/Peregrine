@@ -24,11 +24,28 @@
         <AbilArray Link="PeregrineGhostBuild_Refinery"/>
     </CUnit>
 
-    <!-- Resource Highway: Hatchery parent guarantees creep generation from bare terrain.
-         Actor overrides to SpineCrawler model. Created via c_unitCreateIgnorePlacement. -->
-    <CUnit id="PeregrineResourceHighway" parent="Hatchery">
+    <!-- Resource Highway: static pipeline node.
+         parent=CreepTumorBurrowed — minimal Zerg structure.
+         Aliases cleared so the unit shows its own name.
+         Both inherited abilities removed by index.
+         makeCreep4x4 swapped for makeCreep8x6 for bare-terrain creep generation. -->
+    <CUnit id="PeregrineResourceHighway" parent="CreepTumorBurrowed">
         <EditorCategories value="ObjectFamily:Peregrine"/>
         <FlagArray index="NoScore" value="1"/>
+        <FlagArray index="Cloaked" value="0"/>
+        <FlagArray index="Buried" value="0"/>
+        <!-- Clear name aliases so the unit shows "Resource Highway" not "Creep Tumor" -->
+        <LeaderAlias value=""/>
+        <SelectAlias value=""/>
+        <TechAliasArray index="0" removed="1"/>
+        <!-- Remove both inherited abilities by index -->
+        <AbilArray index="0" removed="1"/>
+        <AbilArray index="1" removed="1"/>
+        <!-- Swap creep behavior for bare-terrain scale -->
+        <BehaviorArray Link="makeCreep4x4" removed="1"/>
+        <BehaviorArray Link="makeCreep8x6"/>
+        <!-- Empty card -->
+        <CardLayouts/>
         <Footprint value="Footprint2x2Contour"/>
         <PlacementFootprint value="Footprint2x2"/>
         <Radius value="1"/>

@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Catalog>
-    <!-- Explicit actor mapping prevents fallback sphere visuals for the custom unit. -->
+    <!-- Resource Highway actor: uses CreepTumor model directly, scaled 2.5x on birth.
+         parent="GenericUnitStandard" gives standard UnitBirth/UnitDeath/selection binding.
+         CreepTumor model id is defined in liberty.sc2mod ModelData.xml. -->
     <CActorUnit id="PeregrineResourceHighway" parent="GenericUnitStandard" unitName="PeregrineResourceHighway">
-        <Model value="SpineCrawler"/>
-        <BuildModel value="SpineCrawler"/>
-        <PlaceholderActorModel value=""/>
+        <Model value="CreepTumor"/>
+        <On Terms="UnitBirth" Send="SetScale 2.500000"/>
     </CActorUnit>
 </Catalog>
